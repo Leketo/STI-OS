@@ -1,0 +1,72 @@
+[
+  {
+    "id": "TAR-1473",
+    "projectId": "project-casa-central",
+    "title": "Revisar iluminación del acceso",
+    "description": "El foco de la entrada principal no enciende.",
+    "state": "POR_HACER",
+    "assignees": [],
+    "confirmedAssignees": [],
+    "signed": false
+  },
+  {
+    "id": "TAR-1474",
+    "projectId": "project-hering",
+    "title": "Instalar cámara en depósito",
+    "description": "Montaje y ajuste de una cámara en el depósito.",
+    "state": "EN_PROCESO",
+    "assignees": ["Diego", "Lucía"],
+    "confirmedAssignees": ["Diego"],
+    "signed": false
+  },
+  {
+    "id": "TAR-1475",
+    "projectId": "project-aldo-galeria",
+    "title": "Verificar cableado de red",
+    "description": "Comprobar conexiones de los puestos de caja.",
+    "state": "FINALIZADO",
+    "assignees": ["Mario"],
+    "confirmedAssignees": ["Mario"],
+    "signed": false
+  },
+  {
+    "id": "TAR-1476",
+    "projectId": "project-casa-central",
+    "title": "Mantenimiento de sonido",
+    "description": "Ajuste de parlantes y prueba final en el salón.",
+    "state": "FINALIZADO",
+    "assignees": ["Diego", "Lucía"],
+    "confirmedAssignees": ["Diego", "Lucía"],
+    "signed": true
+  },
+  {
+    "id": "TAR-1477",
+    "projectId": "project-hering",
+    "title": "Revisar puntos de red",
+    "description": "Se reportan cortes intermitentes en el área de ventas.",
+    "state": "POR_HACER",
+    "assignees": ["Mario"],
+    "confirmedAssignees": [],
+    "signed": false
+  },
+  {
+    "id": "TAR-1478",
+    "projectId": "project-aldo-galeria",
+    "title": "Configurar grabador de cámaras",
+    "description": "Actualizar parámetros de grabación y comprobar imágenes.",
+    "state": "EN_PROCESO",
+    "assignees": ["Lucía"],
+    "confirmedAssignees": [],
+    "signed": false
+  },
+  {
+    "id": "TAR-1479",
+    "projectId": "project-casa-central",
+    "title": "Reemplazar cable HDMI",
+    "description": "Trabajo ya validado y facturado.",
+    "state": "FACTURADO",
+    "assignees": ["Mario"],
+    "confirmedAssignees": ["Mario"],
+    "signed": true
+  }
+]

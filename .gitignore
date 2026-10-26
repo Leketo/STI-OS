@@ -1,0 +1,31 @@
+# Local project material and generated assets
+/APP Servicio STI 2026.txt
+/server/
+/output/
+/docs/transcripciones/
+/.starter-source/
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Frontend and backend build output
+node_modules/
+.next/
+out/
+dist/
+build/
+target/
+coverage/
+*.tsbuildinfo
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,26 @@
+{
+  "client": {
+    "id": "client-sallustro",
+    "name": "Sallustro"
+  },
+  "projects": [
+    {
+      "id": "project-casa-central",
+      "clientId": "client-sallustro",
+      "name": "Casa Central",
+      "description": "Instalaciones y mantenimiento de la sede principal"
+    },
+    {
+      "id": "project-hering",
+      "clientId": "client-sallustro",
+      "name": "Hering",
+      "description": "Servicios técnicos del local comercial"
+    },
+    {
+      "id": "project-aldo-galeria",
+      "clientId": "client-sallustro",
+      "name": "Aldo - Pase la Galería",
+      "description": "Trabajos de red, cámaras y sonido"
+    }
+  ]
+}
