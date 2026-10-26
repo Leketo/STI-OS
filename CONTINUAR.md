@@ -38,7 +38,7 @@ Database check through `psql` as the migration role: `sti.app_user` holds `admin
 
 Process state left behind: PostgreSQL on `127.0.0.1:55432` running; the backend stopped (keeping the runtime JAR free for Windows packaging); both smoke frontends (`:3021` and the stale `:3017` from the previous session) stopped; the pre-existing dev server on `:3000` untouched and still returning 200 for the demo board after the rebuild. Restart with `backend/scripts/run-local.ps1`.
 
-This slice is still uncommitted and undeployed.
+This slice was then committed and pushed to `origin/main` as `673075c`. It is published in Git but **not** deployed: `https://app.stisistemas.com` still serves the earlier demo commit `bef587fbebcf921d39eb5ec2b2572606ec418c7a`.
 
 Persistent local connection: `jdbc:postgresql://127.0.0.1:55432/sti_os`; schema `sti`; runtime user `sti_runtime`. Credentials and generated local ADMIN login are in ignored, current-user ACL-restricted `output/backend-local/credentials.json`. The DB is running on loopback. The backend was launched on `127.0.0.1:8080` for smoke testing, then stopped to release the JAR for packaging. An isolated frontend standalone package was launched on `127.0.0.1:3017` for smoke testing; an existing STI dev server on `:3000` was preserved and still returned 200 after build. Do not assume these processes survive a reboot; `backend/scripts/start-local.ps1` reuses the persistent DB and `run-local.ps1` starts the backend.
 
@@ -57,9 +57,8 @@ The build must use JDK 21 explicitly; Maven defaults to JDK 17 on this workstati
 
 ## Next steps
 
-1. Commit and push this client/account onboarding slice; it passed tests, review and browser verification but is still only local.
-2. Run against PostgreSQL 18 before VPS deployment; finalize credential delivery with the server agent.
-3. Implement task creation/assignment/transitions and connect real task data to the authenticated frontend. Current boards remain public mock data.
-4. Use published commit `91e76d8503fe87f857f0db64ba1ada9d8155ac14` for the PostgreSQL 18 parity check and VPS handoff. Deploy and validate it only when those checks and configuration are ready; the VPS still serves the earlier demo. No CI/CD pipeline is implemented yet.
+1. Run against PostgreSQL 18 before VPS deployment; finalize credential delivery with the server agent.
+2. Implement task creation/assignment/transitions and connect real task data to the authenticated frontend. Current boards remain public mock data.
+3. Use published commit `673075c` for the PostgreSQL 18 parity check and VPS handoff. Deploy and validate it only when those checks and configuration are ready; the VPS still serves the earlier demo. No CI/CD pipeline is implemented yet.
 
 Server report supplied by the user: administrative T1 checks passed, demo preserved, backend inactive/no `/api` proxy; first JAR/auth/health, external ports and external recovery remain pending. This is reported evidence, not a desktop verification of VPS state.
