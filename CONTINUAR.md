@@ -58,7 +58,7 @@ A real gap surfaced during verification and was closed inside this slice: there 
 
 Verified: **17/17** integration tests on isolated PostgreSQL 15.3 with the three JARs packaged; frontend typecheck, ESLint and production build clean; and an end-to-end HTTP run through the frontend proxy covering project creation, `TAR-0001`, assignment, start, confirmation to `FINALIZADO`, reopen with confirmations cleared, cancellation, and the ADMIN-only cancelled view. The traceability log came back in order as `CREADA, ASIGNADA, ESTADO, CONFIRMACION, ESTADO`, with two events carrying coordinates and two carrying an absence reason.
 
-Not verified: the React board in a real browser. The Chrome extension disconnected mid-session and that check is still pending. `FACTURADO`, the client signature and the five photos are not implemented.
+Published as `4393228` on `origin/main`. Not verified: the React board in a real browser. The Chrome extension disconnected mid-session and that check is still pending. `FACTURADO`, the client signature and the five photos are not implemented.
 
 Two fixes found by verification, not by review: the production bundle needs `STI_API_ORIGIN` at **build** time or it ships no `/api` rewrites, and `task_event.occurred_at` uses `clock_timestamp()` because `now()` gave a confirmation and the `FINALIZADO` it triggers the same instant and lost their order.
 
