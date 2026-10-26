@@ -165,6 +165,32 @@ paths:
                 type: array
                 items: {$ref: '#/components/schemas/Project'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: createProject
+      description: >-
+        ADMIN only, as the client defined. A project belongs to exactly one company and must exist before any task
+        can be created inside it.
+      parameters:
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientId, name]
+              properties:
+                clientId: {type: string, format: uuid}
+                name: {type: string, minLength: 1, maxLength: 200}
+      responses:
+        '201':
+          description: Created project
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Project'}
+        '400': {description: Invalid name or unknown company}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /api/projects/{id}:
     get:
       operationId: getProject
@@ -182,6 +208,200 @@ paths:
         '400': {description: Malformed identifier}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {description: Missing or outside the account company; indistinguishable}
+  /api/operators:
+    get:
+      operationId: listOperators
+      description: ADMIN and SUPERVISOR only. Enabled internal accounts that can receive a task assignment; CLIENTE accounts are never listed.
+      responses:
+        '200':
+          description: Assignable internal accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Operator'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/tasks:
+    get:
+      operationId: listTasks
+      description: >-
+        Visibility follows the role. ADMIN sees everything. SUPERVISOR sees every task except cancelled ones unless
+        requested. USUARIO sees only tasks assigned to it, never FACTURADO. CLIENTE sees every task of its company
+        except FACTURADO and ANULADA. Maximum 200 results, most recent first.
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema: {type: string, format: uuid}
+        - name: status
+          in: query
+          required: false
+          description: ANULADA is only accepted for ADMIN; it is the separate cancelled view.
+          schema: {$ref: '#/components/schemas/TaskStatus'}
+      responses:
+        '200':
+          description: Visible tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Task'}
+        '400': {description: Malformed filter}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createTask
+      description: >-
+        Every role creates in POR_HACER, never in another state. USUARIO is assigned automatically to what it creates.
+        CLIENTE creates unassigned and only inside its own company. The visible code is a global correlative, TAR-0001.
+      parameters:
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId, title, location]
+              properties:
+                projectId: {type: string, format: uuid}
+                title: {type: string, minLength: 1, maxLength: 200}
+                detail: {type: string, maxLength: 4000, nullable: true}
+                location: {$ref: '#/components/schemas/Location'}
+      responses:
+        '201':
+          description: Created task in POR_HACER
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {description: Invalid input, unknown project or invalid location}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/tasks/{id}:
+    get:
+      operationId: getTask
+      description: Same visibility as the list. Includes assignments and the full traceability log.
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Visible task with its history
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskDetail'}
+        '400': {description: Malformed identifier}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {description: Missing or not visible to the account; indistinguishable}
+  /api/tasks/{id}/assignments:
+    post:
+      operationId: assignTask
+      description: >-
+        ADMIN and SUPERVISOR only; a SUPERVISOR may assign itself. Only internal accounts can be assigned.
+        Repeating an existing assignment is accepted and changes nothing.
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Task after the assignment
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {description: Unknown account, CLIENTE account or closed task}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: Missing or not visible}
+  /api/tasks/{id}/assignments/{userId}:
+    delete:
+      operationId: unassignTask
+      description: ADMIN and SUPERVISOR only. Removing an assignee also removes its pending confirmation.
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: userId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/Csrf'
+      responses:
+        '200':
+          description: Task after the removal
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {description: Closed task}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: Missing or not visible}
+  /api/tasks/{id}/status:
+    post:
+      operationId: changeTaskStatus
+      description: >-
+        POR_HACER to EN_PROCESO may be done by ADMIN, SUPERVISOR or an assigned USUARIO. Only ADMIN and SUPERVISOR
+        move a task backwards, which clears every confirmation. FINALIZADO is never set here: it is reached when all
+        assignees confirm. ANULADA is ADMIN only and keeps the task in the history. FACTURADO requires a client
+        signature and is not implemented in this slice.
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to, location]
+              properties:
+                to: {type: string, enum: [POR_HACER, EN_PROCESO, ANULADA]}
+                location: {$ref: '#/components/schemas/Location'}
+      responses:
+        '200':
+          description: Task after the transition
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {description: Transition not allowed from the current state, or invalid location}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: Missing or not visible}
+  /api/tasks/{id}/confirmations:
+    post:
+      operationId: confirmTask
+      description: >-
+        An assigned account confirms its own completion of an EN_PROCESO task. When every assignee has confirmed the
+        task becomes FINALIZADO. With a single assignee the first confirmation finishes it. Confirming twice is
+        accepted and changes nothing.
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [location]
+              properties:
+                location: {$ref: '#/components/schemas/Location'}
+      responses:
+        '200':
+          description: Task after the confirmation, with the progress counter
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {description: Task not EN_PROCESO, or invalid location}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: Missing, not visible or the account is not assigned}
 components:
   securitySchemes:
     session: {type: apiKey, in: cookie, name: STI_SESSION}
@@ -191,6 +411,11 @@ components:
       in: header
       required: true
       schema: {type: string}
+    TaskId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
   responses:
     Unauthorized: {description: Missing, expired, disabled or invalid credentials; no account detail}
     Forbidden: {description: Missing or invalid CSRF token, or denied operation}
@@ -208,3 +433,73 @@ components:
         id: {type: string, format: uuid}
         clientId: {type: string, format: uuid}
         name: {type: string}
+    Operator:
+      type: object
+      required: [id, name, role]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        role: {type: string, enum: [ADMIN, SUPERVISOR, USUARIO]}
+    TaskStatus:
+      type: string
+      enum: [POR_HACER, EN_PROCESO, FINALIZADO, FACTURADO, ANULADA]
+    Location:
+      type: object
+      description: >-
+        Device traceability for the action. Either coordinates or an explicit reason for their absence; a request with
+        neither is rejected. GPS is required at every step, but a device that cannot obtain a fix records the reason
+        instead of blocking the work.
+      properties:
+        latitude: {type: number, format: double, minimum: -90, maximum: 90}
+        longitude: {type: number, format: double, minimum: -180, maximum: 180}
+        accuracyM: {type: number, format: double, minimum: 0, nullable: true}
+        absentReason: {type: string, minLength: 1, maxLength: 200}
+    Assignee:
+      type: object
+      required: [id, name, confirmed]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        confirmed: {type: boolean, description: Whether this account already confirmed the current completion round}
+    Task:
+      type: object
+      required: [id, code, projectId, clientId, title, status, createdAt, assignees, confirmed, pending]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string, example: TAR-0001, description: Global correlative shown to people}
+        projectId: {type: string, format: uuid}
+        clientId: {type: string, format: uuid}
+        title: {type: string}
+        detail: {type: string, nullable: true}
+        status: {$ref: '#/components/schemas/TaskStatus'}
+        createdAt: {type: string, format: date-time}
+        assignees:
+          type: array
+          items: {$ref: '#/components/schemas/Assignee'}
+        confirmed: {type: integer, description: Assignees that already confirmed; the 1 of the "1 de 2" counter}
+        pending: {type: integer, description: Assignees still to confirm}
+    TaskEvent:
+      type: object
+      required: [id, kind, actorId, actorName, occurredAt]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [CREADA, ASIGNADA, DESASIGNADA, ESTADO, CONFIRMACION]}
+        fromStatus: {$ref: '#/components/schemas/TaskStatus'}
+        toStatus: {$ref: '#/components/schemas/TaskStatus'}
+        actorId: {type: string, format: uuid}
+        actorName: {type: string}
+        subjectId: {type: string, format: uuid, nullable: true, description: Account assigned or unassigned by the action}
+        occurredAt: {type: string, format: date-time}
+        latitude: {type: number, format: double, nullable: true}
+        longitude: {type: number, format: double, nullable: true}
+        accuracyM: {type: number, format: double, nullable: true}
+        locationAbsentReason: {type: string, nullable: true}
+    TaskDetail:
+      allOf:
+        - $ref: '#/components/schemas/Task'
+        - type: object
+          required: [events]
+          properties:
+            events:
+              type: array
+              items: {$ref: '#/components/schemas/TaskEvent'}

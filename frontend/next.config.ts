@@ -15,6 +15,9 @@ const nextConfig: NextConfig = {
       { source: '/api/clients', destination: `${origin.origin}/api/clients` },
       { source: '/api/projects/:path*', destination: `${origin.origin}/api/projects/:path*` },
       { source: '/api/projects', destination: `${origin.origin}/api/projects` },
+      { source: '/api/operators', destination: `${origin.origin}/api/operators` },
+      { source: '/api/tasks/:path*', destination: `${origin.origin}/api/tasks/:path*` },
+      { source: '/api/tasks', destination: `${origin.origin}/api/tasks` },
     ];
   },
 };

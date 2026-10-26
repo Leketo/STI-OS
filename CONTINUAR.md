@@ -48,6 +48,20 @@ Final review fixes: `role: null` now returns 400, bootstrap re-entry requires an
 
 The build must use JDK 21 explicitly; Maven defaults to JDK 17 on this workstation. PostgreSQL 15 binaries are installed; Docker daemon is unavailable. Use `backend/scripts/test-local.ps1` for an isolated synthetic cluster and Maven verification; it does not use the installed database service or VPS. See `backend/README.md` for configuration and all commands.
 
+## Task domain, 2026-10-26
+
+Decisions taken by the user this session, now recorded in `docs/definiciones-funcionales.md`: the visible task identifier is a **global correlative** `TAR-0001`; a device that cannot obtain GPS **records the reason and the action continues** instead of blocking the technician; and the slice scope is tasks, states and assignment, leaving signature and photos for the next one.
+
+Implemented: migration `V2__tasks.sql` (`task`, `task_assignment`, `task_event`, `task_number_seq`), `POST /api/projects` for ADMIN, `GET /api/operators`, the task endpoints, and an authenticated board in `/app` with real data plus an ADMIN project form. `backend/README.md` holds the full rule set.
+
+A real gap surfaced during verification and was closed inside this slice: there was no way to create a project, and without a project no task can exist, so the hierarchy client → project → task was unusable end to end.
+
+Verified: **17/17** integration tests on isolated PostgreSQL 15.3 with the three JARs packaged; frontend typecheck, ESLint and production build clean; and an end-to-end HTTP run through the frontend proxy covering project creation, `TAR-0001`, assignment, start, confirmation to `FINALIZADO`, reopen with confirmations cleared, cancellation, and the ADMIN-only cancelled view. The traceability log came back in order as `CREADA, ASIGNADA, ESTADO, CONFIRMACION, ESTADO`, with two events carrying coordinates and two carrying an absence reason.
+
+Not verified: the React board in a real browser. The Chrome extension disconnected mid-session and that check is still pending. `FACTURADO`, the client signature and the five photos are not implemented.
+
+Two fixes found by verification, not by review: the production bundle needs `STI_API_ORIGIN` at **build** time or it ships no `/api` rewrites, and `task_event.occurred_at` uses `clock_timestamp()` because `now()` gave a confirmation and the `FINALIZADO` it triggers the same instant and lost their order.
+
 ## Verification details
 
 - Main Java sources compiled against Boot 4.1.2. The 12-test result above supersedes the initial 10-test foundation run.
@@ -57,8 +71,9 @@ The build must use JDK 21 explicitly; Maven defaults to JDK 17 on this workstati
 
 ## Next steps
 
-1. Run against PostgreSQL 18 before VPS deployment; finalize credential delivery with the server agent.
-2. Implement task creation/assignment/transitions and connect real task data to the authenticated frontend. Current boards remain public mock data.
-3. Use published commit `673075c` for the PostgreSQL 18 parity check and VPS handoff. Deploy and validate it only when those checks and configuration are ready; the VPS still serves the earlier demo. No CI/CD pipeline is implemented yet.
+1. Browser-verify the authenticated task board once the Chrome extension is available again.
+2. Next slice: client signature, the five photos in private storage, and the ADMIN-only `FINALIZADO → FACTURADO` transition that a valid signature unlocks.
+3. Hand `server/mensaje-codex-verificar-pg18.md` to the server agent: PostgreSQL 18 parity, credential delivery and Nginx login rate limiting. The suite is Windows-only, so that message carries the equivalent commands; the VPS has no Maven installed.
+4. Use the latest published commit for the PostgreSQL 18 parity check and VPS handoff. Deploy and validate it only when those checks and configuration are ready; the VPS still serves the earlier demo. No CI/CD pipeline is implemented yet.
 
 Server report supplied by the user: administrative T1 checks passed, demo preserved, backend inactive/no `/api` proxy; first JAR/auth/health, external ports and external recovery remain pending. This is reported evidence, not a desktop verification of VPS state.

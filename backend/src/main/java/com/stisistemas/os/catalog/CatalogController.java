@@ -23,6 +23,7 @@ public class CatalogController {
     record Client(UUID id, String name) {}
     record Project(UUID id, UUID clientId, String name) {}
     record NewClient(String name) {}
+    record NewProject(UUID clientId, String name) {}
 
     @PostMapping("/api/clients")
     @ResponseStatus(HttpStatus.CREATED)
@@ -45,6 +46,24 @@ public class CatalogController {
         return jdbc.query("SELECT id, name FROM sti.client" + (customer ? " WHERE id = ?" : "") + " ORDER BY name, id",
             (rs, n) -> new Client(rs.getObject("id", UUID.class), rs.getString("name")),
             customer ? new Object[]{account.clientId()} : new Object[]{});
+    }
+
+    /** ADMIN only. A task always lives inside an existing project of exactly one company. */
+    @PostMapping("/api/projects")
+    @ResponseStatus(HttpStatus.CREATED)
+    Project createProject(@RequestBody NewProject input, Principal principal) {
+        if (!accounts.active(principal.getName()).role().equals("ADMIN")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        }
+        if (input == null || input.clientId() == null || input.name() == null
+            || input.name().trim().isEmpty() || input.name().trim().length() > 200) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        Integer client = jdbc.queryForObject("SELECT count(*) FROM sti.client WHERE id = ?", Integer.class, input.clientId());
+        if (client == null || client == 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        Project project = new Project(UUID.randomUUID(), input.clientId(), input.name().trim());
+        jdbc.update("INSERT INTO sti.project (id, client_id, name) VALUES (?, ?, ?)", project.id(), project.clientId(), project.name());
+        return project;
     }
 
     @GetMapping("/api/projects")

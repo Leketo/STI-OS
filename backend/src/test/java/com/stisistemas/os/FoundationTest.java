@@ -107,13 +107,27 @@ class FoundationTest {
         assertThat(second.get("/api/projects/" + PROJECT_A).statusCode()).isEqualTo(404);
     }
 
-    @Test void internalRolesSeeCreationCatalogButNoUnimplementedWrites() throws Exception {
+    @Test void internalRolesSeeCreationCatalogAndOnlyAdminCreatesProjects() throws Exception {
         for (String role : new String[]{"admin", "supervisor", "usuario"}) {
             var browser = new Browser(); browser.login(role);
             assertThat(browser.get("/api/projects").body()).contains("Project A", "Project B");
             assertThat(browser.get("/api/auth/me").body()).contains(role.toUpperCase());
-            assertThat(browser.post("/api/projects", "", browser.csrf()).statusCode()).isEqualTo(405);
         }
+        String input = "{\"clientId\":\"" + COMPANY_A + "\",\"name\":\"Obra nueva\"}";
+        var supervisor = new Browser(); supervisor.login("supervisor");
+        assertThat(supervisor.postJson("/api/projects", input, supervisor.csrf()).statusCode()).isEqualTo(403);
+        var admin = new Browser(); admin.login("admin");
+        assertThat(admin.postJson("/api/projects", input, null).statusCode()).isEqualTo(403);
+        assertThat(admin.postJson("/api/projects", "{\"clientId\":\"" + COMPANY_A + "\",\"name\":\"  \"}", admin.csrf()).statusCode()).isEqualTo(400);
+        assertThat(admin.postJson("/api/projects", "{\"clientId\":\"" + UUID.randomUUID() + "\",\"name\":\"Obra\"}", admin.csrf()).statusCode()).isEqualTo(400);
+        var created = admin.postJson("/api/projects", input, admin.csrf());
+        assertThat(created.statusCode()).isEqualTo(201);
+        UUID project = UUID.fromString(JsonPath.read(created.body(), "$.id"));
+        var customer = new Browser(); customer.login("cliente");
+        assertThat(customer.get("/api/projects").body()).contains("Obra nueva");
+        assertThat(customer.postJson("/api/tasks", newTask(project, "En la obra nueva", HERE), customer.csrf()).statusCode()).isEqualTo(201);
+        var other = new Browser(); other.login("second");
+        assertThat(other.get("/api/projects").body()).doesNotContain("Obra nueva");
     }
 
     @Test void disabledAccountsLoseExistingAccess() throws Exception {
@@ -191,6 +205,111 @@ class FoundationTest {
         assertThat(customer.get("/api/clients").body()).contains("New company").doesNotContain("Synthetic A", "Synthetic B");
         assertThat(customer.get("/api/projects").body()).doesNotContain("Project A", "Project B");
         assertThat(customer.postJson("/api/clients", "{\"name\":\"Forbidden\"}", customer.csrf()).statusCode()).isEqualTo(403);
+    }
+
+    @Test void taskReachesFinishedOnlyWhenEveryAssigneeConfirms() throws Exception {
+        UUID operatorId = userId("usuario");
+        var supervisor = new Browser(); supervisor.login("supervisor");
+        var created = supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Instalación de rack", HERE), supervisor.csrf());
+        assertThat(created.statusCode()).isEqualTo(201);
+        String task = JsonPath.read(created.body(), "$.id");
+        assertThat(created.body()).contains("\"status\":\"POR_HACER\"").contains("\"code\":\"TAR-");
+
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + operatorId + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        var both = supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("supervisor") + "\"}", supervisor.csrf());
+        assertThat(both.statusCode()).isEqualTo(200);
+        assertThat(both.body()).contains("\"confirmed\":0", "\"pending\":2");
+
+        var worker = new Browser(); worker.login("usuario");
+        assertThat(worker.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", worker.csrf()).statusCode()).isEqualTo(200);
+        var first = worker.postJson("/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", worker.csrf());
+        assertThat(first.statusCode()).isEqualTo(200);
+        assertThat(first.body()).contains("\"status\":\"EN_PROCESO\"", "\"confirmed\":1", "\"pending\":1");
+        assertThat(worker.postJson("/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", worker.csrf()).body())
+            .contains("\"confirmed\":1");
+
+        var last = supervisor.postJson("/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", supervisor.csrf());
+        assertThat(last.body()).contains("\"status\":\"FINALIZADO\"");
+
+        var back = supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf());
+        assertThat(back.body()).contains("\"status\":\"EN_PROCESO\"", "\"confirmed\":0", "\"pending\":2");
+        assertThat(supervisor.get("/api/tasks/" + task).body()).contains("CONFIRMACION", "ESTADO", "ASIGNADA", "CREADA");
+    }
+
+    @Test void taskRulesRejectForbiddenActorsAndTransitions() throws Exception {
+        var supervisor = new Browser(); supervisor.login("supervisor");
+        String task = JsonPath.read(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Cableado", HERE), supervisor.csrf()).body(), "$.id");
+
+        var worker = new Browser(); worker.login("usuario");
+        assertThat(worker.get("/api/tasks/" + task).statusCode()).isEqualTo(404);
+        assertThat(worker.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("usuario") + "\"}", worker.csrf()).statusCode()).isEqualTo(404);
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("usuario") + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        assertThat(worker.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("supervisor") + "\"}", worker.csrf()).statusCode()).isEqualTo(403);
+        assertThat(worker.postJson("/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", worker.csrf()).statusCode()).isEqualTo(400);
+        assertThat(worker.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", worker.csrf()).statusCode()).isEqualTo(200);
+        assertThat(worker.postJson("/api/tasks/" + task + "/status", "{\"to\":\"POR_HACER\",\"location\":" + HERE + "}", worker.csrf()).statusCode()).isEqualTo(403);
+        assertThat(worker.postJson("/api/tasks/" + task + "/status", "{\"to\":\"ANULADA\",\"location\":" + HERE + "}", worker.csrf()).statusCode()).isEqualTo(403);
+        assertThat(worker.postJson("/api/tasks/" + task + "/status", "{\"to\":\"FINALIZADO\",\"location\":" + HERE + "}", worker.csrf()).statusCode()).isEqualTo(400);
+        assertThat(worker.postJson("/api/tasks/" + task + "/status", "{\"to\":\"FACTURADO\",\"location\":" + HERE + "}", worker.csrf()).statusCode()).isEqualTo(400);
+        assertThat(worker.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", null).statusCode()).isEqualTo(403);
+
+        var customer = new Browser(); customer.login("cliente");
+        assertThat(customer.get("/api/tasks/" + task).statusCode()).isEqualTo(200);
+        assertThat(customer.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", customer.csrf()).statusCode()).isEqualTo(403);
+        assertThat(customer.postJson("/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", customer.csrf()).statusCode()).isEqualTo(403);
+        assertThat(customer.postJson("/api/tasks", newTask(PROJECT_B, "Ajena", HERE), customer.csrf()).statusCode()).isEqualTo(400);
+        assertThat(customer.get("/api/operators").statusCode()).isEqualTo(403);
+        assertThat(supervisor.get("/api/operators").body()).contains("USUARIO").doesNotContain("CLIENTE");
+    }
+
+    @Test void everyStepKeepsLocationOrAnExplicitReason() throws Exception {
+        var supervisor = new Browser(); supervisor.login("supervisor");
+        assertThat(supervisor.postJson("/api/tasks", "{\"projectId\":\"" + PROJECT_A + "\",\"title\":\"Sin ubicación\"}", supervisor.csrf()).statusCode()).isEqualTo(400);
+        assertThat(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Vacía", "{}"), supervisor.csrf()).statusCode()).isEqualTo(400);
+        assertThat(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Ambigua", "{\"latitude\":-25.3,\"longitude\":-57.6,\"absentReason\":\"sin señal\"}"), supervisor.csrf()).statusCode()).isEqualTo(400);
+        assertThat(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Fuera de rango", "{\"latitude\":-125.0,\"longitude\":-57.6}"), supervisor.csrf()).statusCode()).isEqualTo(400);
+        assertThat(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "   ", HERE), supervisor.csrf()).statusCode()).isEqualTo(400);
+
+        var created = supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Depósito sin señal", "{\"absentReason\":\"El dispositivo no obtuvo coordenadas\"}"), supervisor.csrf());
+        assertThat(created.statusCode()).isEqualTo(201);
+        String task = JsonPath.read(created.body(), "$.id");
+        var detail = supervisor.get("/api/tasks/" + task);
+        assertThat(detail.body()).contains("El dispositivo no obtuvo coordenadas", "\"kind\":\"CREADA\"");
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        assertThat(supervisor.get("/api/tasks/" + task).body()).contains("-25.3", "-57.6");
+    }
+
+    @Test void customerSeesOnlyItsCompanyAndAdminKeepsCancelledTasksApart() throws Exception {
+        var customer = new Browser(); customer.login("cliente");
+        var created = customer.postJson("/api/tasks", newTask(PROJECT_A, "Solicitud del cliente", HERE), customer.csrf());
+        assertThat(created.statusCode()).isEqualTo(201);
+        String task = JsonPath.read(created.body(), "$.id");
+        assertThat(created.body()).contains("\"assignees\":[]", "\"status\":\"POR_HACER\"");
+
+        var other = new Browser(); other.login("second");
+        assertThat(other.get("/api/tasks/" + task).statusCode()).isEqualTo(404);
+        assertThat(other.get("/api/tasks").body()).doesNotContain("Solicitud del cliente");
+        assertThat(customer.get("/api/tasks?projectId=" + PROJECT_A).body()).contains("Solicitud del cliente");
+
+        var admin = new Browser(); admin.login("admin");
+        assertThat(admin.postJson("/api/tasks/" + task + "/status", "{\"to\":\"ANULADA\",\"location\":" + HERE + "}", admin.csrf()).body())
+            .contains("\"status\":\"ANULADA\"");
+        assertThat(customer.get("/api/tasks/" + task).statusCode()).isEqualTo(404);
+        var supervisor = new Browser(); supervisor.login("supervisor");
+        assertThat(supervisor.get("/api/tasks/" + task).statusCode()).isEqualTo(404);
+        assertThat(supervisor.get("/api/tasks?status=ANULADA").statusCode()).isEqualTo(403);
+        assertThat(admin.get("/api/tasks?status=ANULADA").body()).contains("Solicitud del cliente");
+        assertThat(admin.get("/api/tasks").body()).doesNotContain("Solicitud del cliente");
+        assertThat(admin.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", admin.csrf()).statusCode()).isEqualTo(400);
+        assertThat(admin.get("/api/tasks?status=INVENTADO").statusCode()).isEqualTo(400);
+    }
+
+    private static final String HERE = "{\"latitude\":-25.3,\"longitude\":-57.6,\"accuracyM\":12.5}";
+    private static String newTask(UUID project, String title, String location) {
+        return "{\"projectId\":\"" + project + "\",\"title\":\"" + title + "\",\"location\":" + location + "}";
+    }
+    private static UUID userId(String role) {
+        return owner.queryForObject("SELECT id FROM sti.app_user WHERE email = ?", UUID.class, role + "@example.invalid");
     }
 
     private URI uri(String path) { return URI.create("http://127.0.0.1:" + port + path); }

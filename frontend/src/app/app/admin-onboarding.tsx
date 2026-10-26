@@ -1,31 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { errorFor, postWithCsrf } from "./api";
 
 type Client = { id: string; name: string };
 type Role = "ADMIN" | "SUPERVISOR" | "USUARIO" | "CLIENTE";
 
 const inputClass = "w-full rounded-lg border border-slate-300 px-3 py-2.5 focus:border-blue-600 focus:outline-none";
-
-async function postWithCsrf(path: string, body: object): Promise<Response> {
-  const tokenResponse = await fetch("/api/auth/csrf", { credentials: "same-origin", cache: "no-store" });
-  if (!tokenResponse.ok) throw new Error("unavailable");
-  const csrf = await tokenResponse.json() as { token: string; headerName: string };
-  return fetch(path, {
-    method: "POST",
-    credentials: "same-origin",
-    cache: "no-store",
-    headers: { "Content-Type": "application/json", [csrf.headerName]: csrf.token },
-    body: JSON.stringify(body),
-  });
-}
-
-function errorFor(response: Response): string {
-  if (response.status === 400) return "Revisá los datos ingresados.";
-  if (response.status === 409) return "Ese correo ya está registrado.";
-  if (response.status === 401 || response.status === 403) return "Tu sesión o tus permisos cambiaron. Volvé a ingresar.";
-  return "No se pudo completar la operación. Intentá nuevamente.";
-}
 
 export function AdminOnboarding() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -33,6 +14,10 @@ export function AdminOnboarding() {
   const [clientName, setClientName] = useState("");
   const [clientMessage, setClientMessage] = useState("");
   const [clientBusy, setClientBusy] = useState(false);
+  const [projectClientId, setProjectClientId] = useState("");
+  const [projectName, setProjectName] = useState("");
+  const [projectMessage, setProjectMessage] = useState("");
+  const [projectBusy, setProjectBusy] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -79,6 +64,23 @@ export function AdminOnboarding() {
     }
   }
 
+  async function createProject(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setProjectMessage("");
+    setProjectBusy(true);
+    try {
+      const response = await postWithCsrf("/api/projects", { clientId: projectClientId, name: projectName.trim() });
+      if (!response.ok) { setProjectMessage(errorFor(response)); return; }
+      const created = await response.json() as { name: string };
+      setProjectName("");
+      setProjectMessage(`Proyecto ${created.name} creado. Ya podés crear tareas dentro.`);
+    } catch {
+      setProjectMessage("No se pudo confirmar el alta. Revisá la lista de proyectos antes de intentar otra vez.");
+    } finally {
+      setProjectBusy(false);
+    }
+  }
+
   async function createAccount(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAccountMessage("");
@@ -114,6 +116,19 @@ export function AdminOnboarding() {
         <ul className="mt-2 max-h-44 list-inside list-disc overflow-y-auto">{clients.map(client => <li key={client.id}>{client.name}</li>)}</ul>
       </details>
       <button type="submit" disabled={clientBusy} className="rounded-lg bg-blue-600 px-4 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-60">{clientBusy ? "Guardando…" : "Crear cliente"}</button>
+    </form>
+    <form onSubmit={createProject} className="space-y-4 rounded-xl border border-slate-200 p-4 sm:p-5">
+      <h3 className="font-semibold">Nuevo proyecto</h3>
+      <p className="text-sm text-slate-600">Toda tarea vive dentro de un proyecto de un cliente.</p>
+      <div><label htmlFor="project-client" className="mb-1 block text-sm font-medium">Cliente</label>
+        <select id="project-client" className={inputClass} required value={projectClientId} onChange={event => setProjectClientId(event.target.value)}>
+          <option value="">Seleccioná un cliente</option>
+          {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
+        </select></div>
+      <div><label htmlFor="project-name" className="mb-1 block text-sm font-medium">Nombre del proyecto</label>
+        <input id="project-name" className={inputClass} required maxLength={200} value={projectName} onChange={event => setProjectName(event.target.value)} /></div>
+      {projectMessage && <p role="status" className="text-sm text-slate-700">{projectMessage}</p>}
+      <button type="submit" disabled={projectBusy || !projectClientId} className="rounded-lg bg-blue-600 px-4 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-60">{projectBusy ? "Guardando…" : "Crear proyecto"}</button>
     </form>
     <form onSubmit={createAccount} className="space-y-4 rounded-xl border border-slate-200 p-4 sm:p-5">
       <h3 className="font-semibold">Nueva cuenta</h3>

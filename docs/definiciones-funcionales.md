@@ -7,7 +7,7 @@ Actualizado: 24/10/2026. Este documento registra las decisiones expresas del cli
 - STI-OS será una aplicación web utilizable en teléfono y escritorio, con interfaces adaptadas a cada tamaño de pantalla.
 - Gestionará tareas de instalación y servicio que hoy STI registra manualmente: cámaras, cableado, montaje, sonido y otros trabajos.
 - La jerarquía obligatoria es **cliente → proyecto → tarea**: toda tarea debe pertenecer a un proyecto, que debe existir antes de crearla. Para el cliente Sallustro, Hering y Casa Central son proyectos. Un proyecto también puede representar una obra u otro tipo de trabajo. La posible distinción futura entre proyecto y sucursal queda pendiente de análisis; no se modela una entidad sucursal por ahora.
-- Solo ADMIN puede crear proyectos. USUARIO, SUPERVISOR y CLIENTE crean tareas únicamente en proyectos ya existentes.
+- Solo ADMIN puede crear proyectos. USUARIO, SUPERVISOR y CLIENTE crean tareas únicamente en proyectos ya existentes. Implementado el 26/10/2026 como `POST /api/projects`, restringido a ADMIN.
 - El flujo operativo principal tiene cuatro estados: `POR_HACER`, `EN_PROCESO`, `FINALIZADO`, `FACTURADO`. `ANULADA` es un quinto estado para bajas, visible en una pestaña separada de ADMIN.
 
 ## Roles y visibilidad
@@ -26,7 +26,7 @@ Una tarea puede tener varios usuarios asignados. Cada cuenta CLIENTE está vincu
 - **Todos los roles crean tareas únicamente en `POR_HACER`**, sin excepción.
 - El USUARIO puede elegir cualquier cliente y proyecto; ADMIN revisa la viabilidad y puede anular la tarea, conservándola en el historial.
 - SUPERVISOR puede crear y asignarse la tarea o asignarla a otros. CLIENTE crea sin asignar; después ADMIN o SUPERVISOR se encarga de asignarla.
-- El número `TAR-1473` fue un ejemplo del cliente; el formato y la generación de identificadores no están definidos.
+- El número `TAR-1473` fue un ejemplo del cliente. **Decidido el 26/10/2026:** el identificador visible es un **correlativo global** del sistema con formato `TAR-0001`, generado por una secuencia de PostgreSQL. No se numera por cliente ni por proyecto, para que un código identifique una sola tarea al nombrarla por teléfono o WhatsApp.
 - Una tarea permite hasta **cinco fotos**. No se admiten videos ni otros tipos de archivo en el alcance actual.
 - Por ahora el CLIENTE comunica fuera de la app que creó una tarea, por llamada o WhatsApp. La notificación automática queda para una etapa futura.
 - Los datos mencionados en el relevamiento original para solicitar asistencia son empresa, fecha por defecto, solicitante, local/proyecto y detalle. Deben armonizarse con el nuevo modelo cliente → proyecto → tarea.
@@ -40,7 +40,9 @@ Una tarea puede tener varios usuarios asignados. Cada cuenta CLIENTE está vincu
 - Una tarea `FACTURADO` no puede volver a otro estado ni recibir trabajo adicional; cualquier trabajo posterior se registra en una tarea nueva.
 - ADMIN puede marcar manualmente `FINALIZADO → FACTURADO` **solo si existe firma del cliente válida para esa finalización**.
 - La anulación conserva la tarea en el historial; las tareas anuladas se consultan en una pestaña exclusiva de ADMIN.
-- En cada paso del proceso se debe conservar un registro con el usuario que realizó la acción, fecha y hora, y ubicación GPS obtenida del dispositivo. Esto incluye los cambios de estado, las confirmaciones individuales de finalización y la firma del cliente. **El GPS es obligatorio desde la primera entrega**; el cliente indicó que se habilitarán los permisos correspondientes. En esta entrega, la ubicación es un dato de trazabilidad, sin validación automática de presencia en el sitio. Queda por definir el comportamiento excepcional cuando el dispositivo no pueda proporcionar coordenadas pese a los permisos previstos.
+- En cada paso del proceso se debe conservar un registro con el usuario que realizó la acción, fecha y hora, y ubicación GPS obtenida del dispositivo. Esto incluye los cambios de estado, las confirmaciones individuales de finalización y la firma del cliente. **El GPS es obligatorio desde la primera entrega**; el cliente indicó que se habilitarán los permisos correspondientes. En esta entrega, la ubicación es un dato de trazabilidad, sin validación automática de presencia en el sitio.
+
+**Decidido el 26/10/2026 (duda 1):** si el dispositivo no obtiene coordenadas pese a los permisos, la acción **se completa igual** y el registro guarda un motivo explícito en lugar de las coordenadas. No se bloquea al técnico: un depósito o un subsuelo puede impedir la fijación y el trabajo no puede quedar detenido por eso. Cada paso guarda entonces coordenadas **o** motivo de ausencia, nunca ninguno de los dos; el backend rechaza un paso sin ninguna de las dos formas. Esta decisión es revisable con el cliente sin cambiar el esquema.
 
 ## Firma del cliente
 
@@ -97,14 +99,14 @@ Resumen visual funcional al 24/10/2026: [`sti-os-mapa-funcional-2026-10-24.png`]
 
 ## Dudas pendientes para las próximas historias
 
-1. Qué hacer excepcionalmente si, pese a los permisos previstos y al requisito de GPS obligatorio, el dispositivo no obtiene coordenadas: impedir el paso o habilitar alguna alternativa controlada.
-2. Si la captura de ubicación también aplica a la creación de la tarea, asignaciones, reasignaciones y anulación, además de los cambios de estado, confirmaciones individuales y firma ya definidos.
+1. ~~Qué hacer si el dispositivo no obtiene coordenadas.~~ **Resuelto el 26/10/2026**: se registra el motivo y la acción continúa. Confirmar con el cliente cuando valide la primera entrega.
+2. Si la captura de ubicación también aplica a asignaciones y reasignaciones. La creación, los cambios de estado, las confirmaciones y la anulación **ya la exigen** en la implementación actual; la asignación y la desasignación quedaron sin requisito de ubicación, porque el cliente no lo definió y no se inventó una regla. El esquema admite agregarla sin migración de datos.
 3. Cómo se selecciona el proyecto existente al crear una tarea cuando la empresa tiene varios proyectos.
 4. Reglas de edición, anulación, reasignación y cambios de integrantes una vez que haya confirmaciones parciales o una firma.
 5. Tamaño, formatos admitidos y tratamiento de las cinco fotos.
 6. Visibilidad de una tarea anulada para quien la creó y necesidad de registrar motivo.
 7. Origen, administración y jerarquía de clientes y proyectos; campos obligatorios del formulario de tarea.
-8. Identificadores de tarea, catálogo de servicios y materiales, controles de concurrencia, y representación de historial y firmas anteriores.
+8. Catálogo de servicios y materiales, controles de concurrencia, y representación de historial y firmas anteriores. El identificador de tarea quedó definido arriba.
 9. Si el control horario con entrada/salida y GPS de la segunda etapa funcional se incluye en la fase comercial de 250 h o se presupuestará por separado; reglas de horas extra, vinculación obligatoria con cliente/proyecto y tratamiento de marcaciones fuera del lugar quedan por definir.
 10. Para el cronograma: fecha de inicio, equipo y disponibilidad real, calendario de validaciones del cliente, dependencias de infraestructura y criterio de aceptación por entrega.
 
