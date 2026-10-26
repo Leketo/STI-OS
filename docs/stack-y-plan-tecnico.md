@@ -1,6 +1,6 @@
 # STI-OS — stack acordado y evolución técnica
 
-Actualizado: 25/10/2026. Prioridad acordada: desarrollar un piloto web para un máximo de **10 empresas clientes**, aprovechando el VPS preparado. Esa cifra no equivale a diez usuarios ni demuestra capacidad concurrente. Los detalles funcionales pendientes se resolverán al construir y probar cada flujo.
+Actualizado: 26/10/2026. Prioridad acordada: desarrollar un piloto web para un máximo de **10 empresas clientes**, aprovechando el VPS preparado. Esa cifra no equivale a diez usuarios ni demuestra capacidad concurrente. Los detalles funcionales pendientes se resolverán al construir y probar cada flujo.
 
 **Base de trabajo acordada para el aprovisionamiento:** una aplicación con frontend Next.js, backend Spring Boot y PostgreSQL en un VPS, con acceso web HTTPS y base de datos privada desde la primera entrega. El usuario pidió conservar este plan y preparar su ejecución por el agente del servidor. Esto confirma la dirección de trabajo; no acredita instalación, compatibilidad de parches ni decisiones opcionales de interfaz/CI aún propuestas.
 
@@ -16,14 +16,14 @@ Estas etapas **no reemplazan las fases comerciales** de 320 h y 250 h ni asignan
 
 ## 2. Punto de partida: VPS actual
 
-La referencia vigente es la [entrega del VPS del 25/10/2026](../server/entrega-vps-2026-10-25.md), transmitida por el usuario y enlazada desde el [registro operativo OVH](../server/ovh-vps-development.md). El informe remoto protegido con evidencia detallada no fue inspeccionado aquí. El informe SIFEN del 14/10 es histórico y no describe este destino.
+El antecedente de aprovisionamiento A es la [entrega del VPS del 25/10/2026](../server/entrega-vps-2026-10-25.md), transmitida por el usuario y enlazada desde el [registro operativo OVH](../server/ovh-vps-development.md). El informe remoto protegido con evidencia detallada no fue inspeccionado aquí. El informe SIFEN del 14/10 es histórico y no describe este destino.
 
-- El agente reporta Ubuntu 26.04.1 x86_64, 4 CPU, 7,6 GiB de RAM y 68 GiB libres en raíz. Instaló Java 21.0.12.1, Node.js 24.22.1 LTS, npm 11.19.1, PostgreSQL 18.6 y Nginx 1.28.3. La aplicación todavía no existe desplegada; Next.js/Spring Boot y su compatibilidad concreta se comprobarán con el primer build.
-- Se reportan SSH mediante claves, acceso root/password deshabilitado, UFW/reglas efectivas con entrada denegada salvo TCP/22 en IPv4 e IPv6 y Fail2ban activo. PostgreSQL escucha solo en loopback de ambas familias. Nginx y las unidades de aplicación están inactivos; 80/443/3000/8080 no escuchan. No se realizó una prueba externa independiente.
+- El agente reporta Ubuntu 26.04.1 x86_64, 4 CPU, 7,6 GiB de RAM y 68 GiB libres en raíz. Instaló Java 21.0.12.1, Node.js 24.22.1 LTS, npm 11.19.1, PostgreSQL 18.6 y Nginx 1.28.3. Esas versiones corresponden al reporte A. La demo Next.js ya está desplegada; el backend y su compatibilidad concreta siguen pendientes del primer build.
+- En A se reportaron SSH mediante claves, acceso root/password deshabilitado, firewall IPv4/IPv6 y Fail2ban activo, PostgreSQL en loopback y Nginx/aplicaciones inactivos. Ese estado de Nginx y puertos es histórico: D ya sirve HTTPS con frontend en loopback según el agente VPS. Desde el escritorio se comprobaron rutas HTTPS 200/404; las pruebas externas de los demás puertos siguen pendientes.
 - La decisión autorizada de `codexdev` con sudo completo se conserva. Las aplicaciones se ejecutarán con cuentas de servicio sin privilegios, distintas de la cuenta administrativa.
 - Además del antecedente OVH, se reporta respaldo local de PostgreSQL, roles y archivos privados, diario 03:15 UTC con hasta 10 minutos de retraso y hasta siete conjuntos. Se probaron restauraciones sintéticas de base/archivo y de roles/base en un clúster aislado sin TCP. La restauración completa del VPS y la recuperación desde un destino externo siguen pendientes.
 
-El resultado A se reporta listo para recibir artefactos de prueba. B continúa pendiente. Se prepararon usuarios de servicio sin privilegios, base `sti_os`/esquema `sti` y credenciales separadas de ejecución, migración y respaldo. La próxima integración concretará unidades, rutas, entrega de secretos y privilegios de migraciones futuras; los límites de recursos aún son provisionales.
+El resultado A se reporta listo para recibir artefactos de prueba. D, demo pública de solo lectura con datos simulados, está publicada en `https://app.stisistemas.com`, commit `bef587fbebcf921d39eb5ec2b2572606ec418c7a`; informe remoto `/srv/sti-os/deployments/20261026T132539Z-bef587fb/REPORT.md`, no inspeccionado aquí. B continúa pendiente. Se prepararon usuarios de servicio sin privilegios, base `sti_os`/esquema `sti` y credenciales separadas de ejecución, migración y respaldo. La próxima integración concretará unidades, rutas, entrega de secretos y privilegios de migraciones futuras; los límites de recursos aún son provisionales.
 
 ## 3. Stack de T1
 
@@ -41,7 +41,7 @@ El resultado A se reporta listo para recibir artefactos de prueba. B continúa p
 
 Las familias de versiones son la base acordada actualizada respecto de Java 17/PostgreSQL 16 mencionados inicialmente. En el arranque se verificará su disponibilidad para el sistema operativo real y se fijarán parches compatibles y con correcciones de seguridad, versiones de herramientas y dependencias reproducibles; no se instalará simplemente una etiqueta `latest`. Una incompatibilidad se documentará antes de cambiar la familia elegida.
 
-La documentación consultada de Spring Boot 4.1.2 admite Java 17 a 27; Java 21 es la elección LTS de esta base de trabajo. Se verificará además la compatibilidad real de Spring Session, JPA, Flyway y su módulo PostgreSQL en el proyecto generado. Next.js 16 y Node 24 se comprobarán con la compilación inicial. Las fuentes oficiales figuran al final.
+La documentación consultada de Spring Boot 4.1.2 admite Java 17 a 27; Java 21 es la elección LTS de esta base de trabajo. Se verificará además la compatibilidad real de Spring Session, JPA, Flyway y su módulo PostgreSQL en el proyecto generado. Para D, el VPS reportó `npm ci` y `npm run check` correctos en Linux; esta evidencia no acredita compatibilidad del futuro backend. Las fuentes oficiales figuran al final.
 
 ```text
 Teléfono / escritorio
@@ -83,7 +83,7 @@ Los respaldos de PostgreSQL y archivos deben tener una estrategia coordinada de 
 
 ## 5. Cómo desarrollar y entregar
 
-Se creó el repositorio Git privado [Leketo/STI-OS](https://github.com/Leketo/STI-OS), todavía vacío. La estructura prevista es `frontend/`, `backend/`, `ops/` y `docs/`; GitHub Actions queda como propuesta para CI. No se han publicado los archivos locales ni el starter en el repositorio.
+El repositorio Git privado [Leketo/STI-OS](https://github.com/Leketo/STI-OS) contiene la demo publicada para D. La base local `backend/` incluye contrato OpenAPI, migraciones separadas, autenticación y sesiones JDBC, catálogo aislado por empresa, alta de cuentas reservada a ADMIN y creación inicial del administrador fuera de HTTP. Pasaron 12 pruebas de integración HTTP/PostgreSQL 15.3; PostgreSQL 18 del VPS sigue pendiente. El frontend local incorpora `/login` y `/app` con sesión real cuando se configura el backend; los tableros públicos aún usan datos simulados. Estos cambios locales todavía no están publicados en GitHub ni en el VPS. `ops/` y GitHub Actions siguen como propuestas.
 
 Cada entrega atraviesa interfaz, API y base de datos para permitir probar un flujo completo. Antes de implementar la API de cada entrega, se versionará su contrato OpenAPI: autenticación, entradas, respuestas y errores. No se inventan ahora endpoints ni se configura un workspace Postman; los contratos y las pruebas se incorporarán junto con cada función.
 
@@ -139,14 +139,14 @@ Ya se incorporan en T1 secretos fuera de Git, validación de configuración y ev
 
 ## 9. Próximo paso concreto
 
-El [checklist de instalación de T1](../server/checklist-instalacion-fase-1.md) distingue **A, infraestructura interna reportada lista**, y **B, piloto público pendiente**. Las casillas marcadas reflejan el resumen del agente; las compuestas conservan pendientes cuando falta información. No representan una auditoría en vivo desde este escritorio.
+El [checklist de instalación de T1](../server/checklist-instalacion-fase-1.md) distingue **A, infraestructura reportada lista**, **D, demo publicada**, y **B, piloto con datos reales pendiente**. Las casillas no sustituyen evidencia remota ni una auditoría en vivo.
 
-1. Preparar repositorio local y esqueleto frontend/backend, fijar dependencias y construir migraciones, login, sesiones y roles con datos sintéticos.
-2. Alinear con el agente VPS el contrato de despliegue: nombres de unidades, `ExecStart`/`WorkingDirectory`, releases/puertos, entrega de credenciales al usuario de servicio, esquema `sti`/`search_path` y permisos de futuras migraciones/tablas de sesiones. La migración usa identidad separada; el runtime no ejecuta DDL.
-3. Construir y probar el primer artefacto reproducible; desplegarlo internamente, verificar salud y medir recursos. El DNS de `app.stisistemas.com` ya está creado; coordinar los respaldos de DB/uploads y un destino externo autorizado.
-4. Habilitar HTTPS y validar B, incluidos aislamiento, acceso desde dispositivos, puertos desde un origen externo, recuperación externa y reversión, antes de datos reales.
+1. Según el último reporte administrativo transmitido por el usuario, el agente VPS verificó red, HBA/SCRAM, permisos actuales/futuros y restauración sintética, y corrigió el respaldo de permisos y ajustes por rol. Esta evidencia no fue inspeccionada directamente desde el escritorio. Conservar D y mantener el backend inactivo hasta recibir su artefacto; completar las pruebas externas pendientes.
+2. Continuar desde [CONTINUAR.md](../CONTINUAR.md) y [backend/README.md](../backend/README.md): verificar PostgreSQL 18 y desarrollar el dominio de tareas, asignaciones y transiciones. El login local y el aprovisionamiento de cuentas ya están implementados; falta publicar y validar una revisión concreta en el VPS. Las migraciones tienen identidad separada; el runtime no inicializa esquema ni sesiones.
+3. Publicar en GitHub código y artefacto identificable después de las pruebas; alinear el contrato de configuración con el informe VPS. Desplegar primero internamente, comprobar salud y recursos y luego integrar la API autenticada.
+4. Completar B: aislamiento, permisos, dispositivos, puertos desde origen externo, recuperación externa y reversión antes de datos reales. HTTPS/DNS ya existen para D; preservar y verificar su continuidad.
 
-Dominio y destino externo pendientes no bloquean el desarrollo local ni las pruebas sintéticas. T2/T3 permanecen como evolución futura. El [mensaje de instalación](../server/mensaje-codex-instalacion-fase-1.md) se conserva como antecedente del encargo ya ejecutado.
+El destino externo autorizado sigue pendiente antes de datos reales; no bloquea el desarrollo local ni las pruebas sintéticas. T2/T3 y SMTP permanecen fuera del trabajo actual. El [mensaje de instalación](../server/mensaje-codex-instalacion-fase-1.md) se conserva como antecedente histórico.
 
 ## Referencias técnicas
 

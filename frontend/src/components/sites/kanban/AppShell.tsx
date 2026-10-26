@@ -13,6 +13,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const projectId = pathname.split("/")[2];
   const isProjectRoute = pathname.startsWith("/projects/") && projectId !== "new";
 
+  if (pathname === "/login" || pathname === "/app") return <>{children}</>;
+
   return (
     <KanbanProvider>
       <div className="flex min-h-screen w-full bg-background text-foreground antialiased font-sans">
