@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { LogoutButton } from "./logout-button";
+import { AdminOnboarding } from "./admin-onboarding";
 
 type Account = { id: string; name: string; email: string; role: string; clientId: string | null };
 
@@ -47,6 +48,7 @@ export default async function ApplicationHome() {
           La sesión y tu cuenta ya usan el backend. El tablero disponible sigue siendo una demostración con datos ficticios.
         </div>
         <Link href="/projects/proj-1/board" className="mt-6 inline-block text-sm font-semibold text-blue-700 hover:underline">Abrir tablero de demostración</Link>
+        {account.role === "ADMIN" && <AdminOnboarding />}
       </section>
     </main>
   );

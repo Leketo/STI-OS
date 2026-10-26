@@ -119,7 +119,7 @@ paths:
   /api/clients:
     get:
       operationId: listClients
-      description: CLIENTE sees only its company. Internal roles see catalog for task creation, not other users' tasks. Maximum 100 results; pilot catalog only.
+      description: CLIENTE sees only its company. Internal roles see the full client catalog for account and task creation, not other users' tasks.
       responses:
         '200':
           description: Visible company catalog
@@ -129,6 +129,29 @@ paths:
                 type: array
                 items: {$ref: '#/components/schemas/Client'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: createClient
+      description: ADMIN only. Creates a company so a CLIENTE account can be assigned to it. Requires an authenticated session and CSRF token.
+      parameters:
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 200}
+      responses:
+        '201':
+          description: Created company
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Client'}
+        '400': {description: Invalid company name}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /api/projects:
     get:
       operationId: listProjects

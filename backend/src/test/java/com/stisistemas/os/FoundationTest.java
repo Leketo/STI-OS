@@ -169,6 +169,30 @@ class FoundationTest {
         assertThat(newClient.postJson("/api/accounts", client, newClient.csrf()).statusCode()).isEqualTo(403);
     }
 
+    @Test void adminCreatesCompanyAndCustomerAccountSeesOnlyThatCompany() throws Exception {
+        var operator = new Browser(); operator.login("supervisor");
+        assertThat(operator.postJson("/api/clients", "{\"name\":\"New company\"}", operator.csrf()).statusCode()).isEqualTo(403);
+        var admin = new Browser(); admin.login("admin");
+        assertThat(admin.postJson("/api/clients", "{\"name\":\"New company\"}", null).statusCode()).isEqualTo(403);
+        assertThat(admin.postJson("/api/clients", "{\"name\":\"   \"}", admin.csrf()).statusCode()).isEqualTo(400);
+        var created = admin.postJson("/api/clients", "{\"name\":\"  New company  \"}", admin.csrf());
+        assertThat(created.statusCode()).isEqualTo(201);
+        assertThat(created.body()).contains("New company").doesNotContain("password");
+        UUID clientId = UUID.fromString(JsonPath.read(created.body(), "$.id"));
+
+        String email = "new-company-" + UUID.randomUUID() + "@example.invalid";
+        String input = "{\"name\":\"New customer\",\"email\":\"" + email
+            + "\",\"password\":\"" + PASSWORD + "\",\"role\":\"CLIENTE\",\"clientId\":\"" + clientId + "\"}";
+        var account = admin.postJson("/api/accounts", input, admin.csrf());
+        assertThat(account.statusCode()).isEqualTo(201);
+        assertThat(account.body()).contains(email, clientId.toString()).doesNotContain(PASSWORD, "password_hash");
+        var customer = new Browser();
+        assertThat(customer.post("/api/auth/login", "username=" + email + "&password=" + PASSWORD, customer.csrf()).statusCode()).isEqualTo(204);
+        assertThat(customer.get("/api/clients").body()).contains("New company").doesNotContain("Synthetic A", "Synthetic B");
+        assertThat(customer.get("/api/projects").body()).doesNotContain("Project A", "Project B");
+        assertThat(customer.postJson("/api/clients", "{\"name\":\"Forbidden\"}", customer.csrf()).statusCode()).isEqualTo(403);
+    }
+
     private URI uri(String path) { return URI.create("http://127.0.0.1:" + port + path); }
     private static String required(String key) {
         String value = System.getenv(key);
