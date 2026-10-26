@@ -27,7 +27,7 @@ Una tarea puede tener varios usuarios asignados. Cada cuenta CLIENTE está vincu
 - El USUARIO puede elegir cualquier cliente y proyecto; ADMIN revisa la viabilidad y puede anular la tarea, conservándola en el historial.
 - SUPERVISOR puede crear y asignarse la tarea o asignarla a otros. CLIENTE crea sin asignar; después ADMIN o SUPERVISOR se encarga de asignarla.
 - El número `TAR-1473` fue un ejemplo del cliente. **Decidido el 26/10/2026:** el identificador visible es un **correlativo global** del sistema con formato `TAR-0001`, generado por una secuencia de PostgreSQL. No se numera por cliente ni por proyecto, para que un código identifique una sola tarea al nombrarla por teléfono o WhatsApp.
-- Una tarea permite hasta **cinco fotos**. No se admiten videos ni otros tipos de archivo en el alcance actual.
+- Una tarea permite hasta **cinco fotos**. No se admiten videos ni otros tipos de archivo en el alcance actual. **Decidido el 26/10/2026 (duda 5):** se aceptan **JPEG y PNG de hasta 10 MB** cada una. El servidor verifica el tipo real leyendo los primeros bytes del archivo, no la extensión ni lo que declare el navegador, y guarda el original sin recomprimir. HEIC, el formato por defecto de iPhone, **no** se acepta: obligaría a convertir en el servidor. Suben fotos los asignados, ADMIN, SUPERVISOR y el CLIENTE en tareas de su empresa —así el cliente documenta el problema al pedir el servicio— y solo mientras la tarea está abierta.
 - Por ahora el CLIENTE comunica fuera de la app que creó una tarea, por llamada o WhatsApp. La notificación automática queda para una etapa futura.
 - Los datos mencionados en el relevamiento original para solicitar asistencia son empresa, fecha por defecto, solicitante, local/proyecto y detalle. Deben armonizarse con el nuevo modelo cliente → proyecto → tarea.
 
@@ -50,7 +50,7 @@ Una tarea puede tener varios usuarios asignados. Cada cuenta CLIENTE está vincu
 - Firma presencial: el operador muestra la tarea en su teléfono u otro dispositivo; la persona que recibe el trabajo, por ejemplo el jefe de tienda, indica su nombre, dibuja la firma y acepta **sin iniciar sesión en ese dispositivo**.
 - Firma a distancia: el CLIENTE entra con su cuenta desde su propio dispositivo y firma allí para validar el resultado. En ambos casos se registran el usuario de la sesión desde la que se presenta la firma, fecha y hora, y la ubicación GPS de ese dispositivo, además del nombre y el trazo del firmante.
 - Si una empresa tiene varias cuentas CLIENTE, **cualquiera de ellas puede firmar** sus tareas. El cliente indicó que solo tendrán acceso a la aplicación quienes pueden solicitar y validar el servicio.
-- Si una tarea firmada retrocede, debe solicitarse **una nueva firma** cuando vuelva a finalizarse. La conservación de firmas anteriores como evidencia debe definirse en el diseño del historial.
+- Si una tarea firmada retrocede, debe solicitarse **una nueva firma** cuando vuelva a finalizarse. **Decidido el 26/10/2026:** la firma anterior **se conserva** en el historial, marcada como superada, y solo la última está vigente. Es la evidencia de que el cliente conformó un trabajo que después se reabrió. Una tarea tiene como máximo una firma vigente; la base lo garantiza con un índice único parcial.
 
 ## Fases, horas y referencias
 
@@ -102,8 +102,8 @@ Resumen visual funcional al 24/10/2026: [`sti-os-mapa-funcional-2026-10-24.png`]
 1. ~~Qué hacer si el dispositivo no obtiene coordenadas.~~ **Resuelto el 26/10/2026**: se registra el motivo y la acción continúa. Confirmar con el cliente cuando valide la primera entrega.
 2. Si la captura de ubicación también aplica a asignaciones y reasignaciones. La creación, los cambios de estado, las confirmaciones y la anulación **ya la exigen** en la implementación actual; la asignación y la desasignación quedaron sin requisito de ubicación, porque el cliente no lo definió y no se inventó una regla. El esquema admite agregarla sin migración de datos.
 3. Cómo se selecciona el proyecto existente al crear una tarea cuando la empresa tiene varios proyectos.
-4. Reglas de edición, anulación, reasignación y cambios de integrantes una vez que haya confirmaciones parciales o una firma.
-5. Tamaño, formatos admitidos y tratamiento de las cinco fotos.
+4. Reglas de edición y de cambios de integrantes con confirmaciones parciales. Lo decidido el 26/10/2026: retroceder una tarea borra todas las confirmaciones y supera la firma vigente; una tarea cerrada —finalizada, facturada o anulada— no admite asignar, desasignar ni subir fotos. Falta definir la edición del título y el detalle, y si quitar a un asignado que ya confirmó debe recalcular algo.
+5. ~~Tamaño, formatos admitidos y tratamiento de las cinco fotos.~~ **Resuelto el 26/10/2026**: JPEG y PNG hasta 10 MB, verificados por contenido. Falta definir si se pueden borrar fotos y quién.
 6. Visibilidad de una tarea anulada para quien la creó y necesidad de registrar motivo.
 7. Origen, administración y jerarquía de clientes y proyectos; campos obligatorios del formulario de tarea.
 8. Catálogo de servicios y materiales, controles de concurrencia, y representación de historial y firmas anteriores. El identificador de tarea quedó definido arriba.

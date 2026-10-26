@@ -347,9 +347,10 @@ paths:
       operationId: changeTaskStatus
       description: >-
         POR_HACER to EN_PROCESO may be done by ADMIN, SUPERVISOR or an assigned USUARIO. Only ADMIN and SUPERVISOR
-        move a task backwards, which clears every confirmation. FINALIZADO is never set here: it is reached when all
-        assignees confirm. ANULADA is ADMIN only and keeps the task in the history. FACTURADO requires a client
-        signature and is not implemented in this slice.
+        move a task backwards, which clears every confirmation and supersedes any signature in force, so a reopened
+        task must be signed again. FINALIZADO is never set here: it is reached when all assignees confirm. ANULADA is
+        ADMIN only and keeps the task in the history. FACTURADO is ADMIN only, comes from FINALIZADO, requires a
+        signature in force, and is terminal: nothing moves out of it.
       parameters:
         - $ref: '#/components/parameters/TaskId'
         - $ref: '#/components/parameters/Csrf'
@@ -361,7 +362,7 @@ paths:
               type: object
               required: [to, location]
               properties:
-                to: {type: string, enum: [POR_HACER, EN_PROCESO, ANULADA]}
+                to: {type: string, enum: [POR_HACER, EN_PROCESO, FACTURADO, ANULADA]}
                 location: {$ref: '#/components/schemas/Location'}
       responses:
         '200':
@@ -373,6 +374,106 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {description: Missing or not visible}
+  /api/tasks/{id}/photos:
+    post:
+      operationId: addTaskPhoto
+      description: >-
+        Up to five photos per task, JPEG or PNG, 10 MB each. The declared content type is not trusted: the file is
+        accepted only if its own bytes start with a JPEG or PNG signature. Assignees, ADMIN, SUPERVISOR and the
+        company's CLIENTE may upload while the task is open. Bytes are stored in the private uploads directory,
+        never under Nginx.
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+      responses:
+        '201':
+          description: Stored photo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Photo'}
+        '400': {description: Not a JPEG or PNG, empty, or the task already has five photos}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: Missing or not visible}
+        '413': {description: Larger than 10 MB}
+  /api/tasks/{id}/photos/{photoId}:
+    get:
+      operationId: getTaskPhoto
+      description: Streams the stored bytes to anyone who can see the task. Never cached and never served by Nginx.
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: photoId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Photo bytes
+          content:
+            image/jpeg: {schema: {type: string, format: binary}}
+            image/png: {schema: {type: string, format: binary}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {description: Missing photo, missing task, or task not visible}
+  /api/tasks/{id}/signature:
+    get:
+      operationId: getTaskSignature
+      description: Streams the PNG stroke of one signature, current or superseded, to anyone who can see the task.
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: signatureId
+          in: query
+          required: false
+          description: Defaults to the signature in force.
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Signature stroke
+          content:
+            image/png: {schema: {type: string, format: binary}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {description: No such signature, or task not visible}
+    post:
+      operationId: signTask
+      description: >-
+        Conformity with finished work, only on a FINALIZADO task. Face to face, an operator presents the task on its
+        own device and the signer types a name and draws without logging in; remotely, the company's CLIENTE signs
+        from its own account. Either way the session account, instant and device location are recorded with the name
+        and the stroke. One signature in force per task: reopening the task supersedes it and a new one is required.
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signerName, image, location]
+              properties:
+                signerName: {type: string, minLength: 1, maxLength: 200}
+                signedOn: {type: string, format: date, description: Defaults to today when absent}
+                image: {type: string, description: Base64 PNG of the stroke, with or without a data URL prefix, up to 1 MB decoded}
+                location: {$ref: '#/components/schemas/Location'}
+      responses:
+        '201':
+          description: Signature in force
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Signature'}
+        '400': {description: Task not FINALIZADO, invalid image, invalid date or invalid location}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: Missing or not visible}
+        '409': {description: The task already has a signature in force}
   /api/tasks/{id}/confirmations:
     post:
       operationId: confirmTask
@@ -461,9 +562,33 @@ components:
         id: {type: string, format: uuid}
         name: {type: string}
         confirmed: {type: boolean, description: Whether this account already confirmed the current completion round}
+    Photo:
+      type: object
+      required: [id, contentType, byteSize, uploadedAt, uploadedBy]
+      properties:
+        id: {type: string, format: uuid}
+        contentType: {type: string, enum: [image/jpeg, image/png]}
+        byteSize: {type: integer}
+        uploadedAt: {type: string, format: date-time}
+        uploadedBy: {type: string, description: Display name of the account that uploaded it}
+    Signature:
+      type: object
+      required: [id, signerName, signedOn, signedAt, presentedBy, remote, current]
+      properties:
+        id: {type: string, format: uuid}
+        signerName: {type: string}
+        signedOn: {type: string, format: date}
+        signedAt: {type: string, format: date-time}
+        presentedBy: {type: string, description: Display name of the session account the signature was presented from}
+        remote: {type: boolean, description: True when the company's CLIENTE signed from its own account}
+        current: {type: boolean, description: False once the task was reopened and the signature was superseded}
+        latitude: {type: number, format: double, nullable: true}
+        longitude: {type: number, format: double, nullable: true}
+        accuracyM: {type: number, format: double, nullable: true}
+        locationAbsentReason: {type: string, nullable: true}
     Task:
       type: object
-      required: [id, code, projectId, clientId, title, status, createdAt, assignees, confirmed, pending]
+      required: [id, code, projectId, clientId, title, status, createdAt, assignees, confirmed, pending, photoCount, signed]
       properties:
         id: {type: string, format: uuid}
         code: {type: string, example: TAR-0001, description: Global correlative shown to people}
@@ -478,12 +603,14 @@ components:
           items: {$ref: '#/components/schemas/Assignee'}
         confirmed: {type: integer, description: Assignees that already confirmed; the 1 of the "1 de 2" counter}
         pending: {type: integer, description: Assignees still to confirm}
+        photoCount: {type: integer}
+        signed: {type: boolean, description: Whether a signature is in force, which is what unlocks FACTURADO}
     TaskEvent:
       type: object
       required: [id, kind, actorId, actorName, occurredAt]
       properties:
         id: {type: string, format: uuid}
-        kind: {type: string, enum: [CREADA, ASIGNADA, DESASIGNADA, ESTADO, CONFIRMACION]}
+        kind: {type: string, enum: [CREADA, ASIGNADA, DESASIGNADA, ESTADO, CONFIRMACION, FIRMA, FOTO]}
         fromStatus: {$ref: '#/components/schemas/TaskStatus'}
         toStatus: {$ref: '#/components/schemas/TaskStatus'}
         actorId: {type: string, format: uuid}
@@ -498,8 +625,15 @@ components:
       allOf:
         - $ref: '#/components/schemas/Task'
         - type: object
-          required: [events]
+          required: [events, photos, signatures]
           properties:
             events:
               type: array
               items: {$ref: '#/components/schemas/TaskEvent'}
+            photos:
+              type: array
+              items: {$ref: '#/components/schemas/Photo'}
+            signatures:
+              description: The signature in force, if any, plus the superseded ones kept as evidence.
+              type: array
+              items: {$ref: '#/components/schemas/Signature'}

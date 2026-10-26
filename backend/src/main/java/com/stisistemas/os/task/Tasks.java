@@ -4,6 +4,7 @@ import com.stisistemas.os.identity.Accounts.Account;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,7 +22,9 @@ import org.springframework.web.server.ResponseStatusException;
 public class Tasks {
     public static final Set<String> STATUSES = Set.of("POR_HACER", "EN_PROCESO", "FINALIZADO", "FACTURADO", "ANULADA");
     private static final String SELECT = """
-        SELECT t.id, t.number, t.project_id, p.client_id, t.title, t.detail, t.status, t.created_at
+        SELECT t.id, t.number, t.project_id, p.client_id, t.title, t.detail, t.status, t.created_at,
+               (SELECT count(*) FROM sti.task_photo ph WHERE ph.task_id = t.id) AS photo_count,
+               EXISTS (SELECT 1 FROM sti.task_signature s WHERE s.task_id = t.id AND s.superseded_at IS NULL) AS signed
         FROM sti.task t JOIN sti.project p ON p.id = t.project_id WHERE true""";
     private final JdbcTemplate jdbc;
 
@@ -30,12 +33,19 @@ public class Tasks {
     public record Location(Double latitude, Double longitude, Double accuracyM, String absentReason) {}
     public record Assignee(UUID id, String name, boolean confirmed) {}
     public record Task(UUID id, String code, UUID projectId, UUID clientId, String title, String detail, String status,
-                       OffsetDateTime createdAt, List<Assignee> assignees, int confirmed, int pending) {}
+                       OffsetDateTime createdAt, List<Assignee> assignees, int confirmed, int pending,
+                       int photoCount, boolean signed) {}
     public record Event(UUID id, String kind, String fromStatus, String toStatus, UUID actorId, String actorName,
                         UUID subjectId, OffsetDateTime occurredAt, Double latitude, Double longitude, Double accuracyM,
                         String locationAbsentReason) {}
+    public record Photo(UUID id, String contentType, int byteSize, OffsetDateTime uploadedAt, String uploadedBy) {}
+    public record Signature(UUID id, String signerName, LocalDate signedOn, OffsetDateTime signedAt, String presentedBy,
+                            boolean remote, boolean current, Double latitude, Double longitude, Double accuracyM,
+                            String locationAbsentReason) {}
     public record Detail(UUID id, String code, UUID projectId, UUID clientId, String title, String detail, String status,
-                         OffsetDateTime createdAt, List<Assignee> assignees, int confirmed, int pending, List<Event> events) {}
+                         OffsetDateTime createdAt, List<Assignee> assignees, int confirmed, int pending,
+                         int photoCount, boolean signed, List<Event> events, List<Photo> photos,
+                         List<Signature> signatures) {}
 
     /**
      * GPS is required at every defined step, but a device that cannot obtain a fix records the reason instead of
@@ -85,7 +95,30 @@ public class Tasks {
     public Detail detail(UUID id, Account account) {
         Task task = require(id, account);
         return new Detail(task.id(), task.code(), task.projectId(), task.clientId(), task.title(), task.detail(),
-            task.status(), task.createdAt(), task.assignees(), task.confirmed(), task.pending(), events(id));
+            task.status(), task.createdAt(), task.assignees(), task.confirmed(), task.pending(), task.photoCount(),
+            task.signed(), events(id), photos(id), signatures(id));
+    }
+
+    public List<Photo> photos(UUID taskId) {
+        return jdbc.query("""
+            SELECT p.id, p.content_type, p.byte_size, p.uploaded_at, u.display_name
+            FROM sti.task_photo p JOIN sti.app_user u ON u.id = p.uploaded_by
+            WHERE p.task_id = ? ORDER BY p.uploaded_at, p.id""",
+            (rs, n) -> new Photo(rs.getObject("id", UUID.class), rs.getString("content_type"), rs.getInt("byte_size"),
+                rs.getObject("uploaded_at", OffsetDateTime.class), rs.getString("display_name")), taskId);
+    }
+
+    public List<Signature> signatures(UUID taskId) {
+        return jdbc.query("""
+            SELECT s.id, s.signer_name, s.signed_on, s.signed_at, s.remote, s.superseded_at, u.display_name,
+                   s.latitude, s.longitude, s.accuracy_m, s.location_absent_reason
+            FROM sti.task_signature s JOIN sti.app_user u ON u.id = s.presented_by
+            WHERE s.task_id = ? ORDER BY s.signed_at DESC""",
+            (rs, n) -> new Signature(rs.getObject("id", UUID.class), rs.getString("signer_name"),
+                rs.getObject("signed_on", LocalDate.class), rs.getObject("signed_at", OffsetDateTime.class),
+                rs.getString("display_name"), rs.getBoolean("remote"), rs.getObject("superseded_at") == null,
+                number(rs, "latitude"), number(rs, "longitude"), number(rs, "accuracy_m"),
+                rs.getString("location_absent_reason")), taskId);
     }
 
     public void event(UUID taskId, String kind, String from, String to, UUID actor, UUID subject, Location location) {
@@ -130,7 +163,8 @@ public class Tasks {
             List<Assignee> assignees = byTask.getOrDefault(task.id(), List.of());
             int confirmed = (int) assignees.stream().filter(Assignee::confirmed).count();
             return new Task(task.id(), task.code(), task.projectId(), task.clientId(), task.title(), task.detail(),
-                task.status(), task.createdAt(), assignees, confirmed, assignees.size() - confirmed);
+                task.status(), task.createdAt(), assignees, confirmed, assignees.size() - confirmed,
+                task.photoCount(), task.signed());
         }).toList();
     }
 
@@ -151,7 +185,8 @@ public class Tasks {
         return new Task(rs.getObject("id", UUID.class), code(rs.getInt("number")),
             rs.getObject("project_id", UUID.class), rs.getObject("client_id", UUID.class),
             rs.getString("title"), rs.getString("detail"), rs.getString("status"),
-            rs.getObject("created_at", OffsetDateTime.class), List.of(), 0, 0);
+            rs.getObject("created_at", OffsetDateTime.class), List.of(), 0, 0,
+            rs.getInt("photo_count"), rs.getBoolean("signed"));
     }
 
     private static Double number(ResultSet rs, String column) throws SQLException {

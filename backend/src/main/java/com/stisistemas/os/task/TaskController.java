@@ -1,12 +1,19 @@
 package com.stisistemas.os.task;
 
 import com.stisistemas.os.identity.Accounts;
+import java.io.IOException;
 import java.security.Principal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,16 +28,19 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 public class TaskController {
     private static final Set<String> OPERATORS = Set.of("ADMIN", "SUPERVISOR");
-    private static final Set<String> REQUESTABLE = Set.of("POR_HACER", "EN_PROCESO", "ANULADA");
+    private static final Set<String> REQUESTABLE = Set.of("POR_HACER", "EN_PROCESO", "FACTURADO", "ANULADA");
     private static final Set<String> OPEN = Set.of("POR_HACER", "EN_PROCESO");
+    private static final int MAX_PHOTOS = 5;
     private final JdbcTemplate jdbc;
     private final Accounts accounts;
     private final Tasks tasks;
+    private final Uploads uploads;
 
-    public TaskController(JdbcTemplate jdbc, Accounts accounts, Tasks tasks) {
+    public TaskController(JdbcTemplate jdbc, Accounts accounts, Tasks tasks, Uploads uploads) {
         this.jdbc = jdbc;
         this.accounts = accounts;
         this.tasks = tasks;
+        this.uploads = uploads;
     }
 
     record Operator(UUID id, String name, String role) {}
@@ -38,6 +48,7 @@ public class TaskController {
     record NewAssignment(UUID userId) {}
     record StatusChange(String to, Tasks.Location location) {}
     record Confirmation(Tasks.Location location) {}
+    record NewSignature(String signerName, String signedOn, String image, Tasks.Location location) {}
 
     @GetMapping("/api/operators")
     List<Operator> operators(Principal principal) {
@@ -147,10 +158,142 @@ public class TaskController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         }
         if (to.equals(from)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        if (backwards) jdbc.update("UPDATE sti.task_assignment SET confirmed_at = NULL WHERE task_id = ?", id);
+        if (to.equals("FACTURADO")) {
+            if (!account.role().equals("ADMIN")) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+            if (!from.equals("FINALIZADO") || !task.signed()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        if (backwards) {
+            jdbc.update("UPDATE sti.task_assignment SET confirmed_at = NULL WHERE task_id = ?", id);
+            // A reopened task must be signed again; the previous signature stays as evidence.
+            jdbc.update("UPDATE sti.task_signature SET superseded_at = clock_timestamp() WHERE task_id = ? AND superseded_at IS NULL", id);
+        }
         jdbc.update("UPDATE sti.task SET status = ? WHERE id = ?", to, id);
         tasks.event(id, "ESTADO", from, to, account.id(), null, location);
         return tasks.require(id, account);
+    }
+
+    @PostMapping("/api/tasks/{id}/photos")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Transactional
+    Tasks.Photo addPhoto(@PathVariable UUID id, @RequestParam("file") MultipartFile file, Principal principal) {
+        var account = accounts.active(principal.getName());
+        var task = tasks.require(id, account);
+        if (!OPEN.contains(task.status())) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        if (!mayAttach(account, task)) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        if (task.photoCount() >= MAX_PHOTOS) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        byte[] bytes = read(file);
+        if (bytes.length == 0 || bytes.length > Uploads.MAX_PHOTO_BYTES) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        String contentType = Uploads.imageType(bytes);
+        if (contentType == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        UUID photo = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO sti.task_photo (id, task_id, storage_name, content_type, byte_size, uploaded_by)
+            VALUES (?,?,?,?,?,?)""",
+            photo, id, uploads.store(bytes, contentType), contentType, bytes.length, account.id());
+        return tasks.photos(id).stream().filter(stored -> stored.id().equals(photo)).findFirst()
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR));
+    }
+
+    @GetMapping("/api/tasks/{id}/photos/{photoId}")
+    ResponseEntity<byte[]> photo(@PathVariable UUID id, @PathVariable UUID photoId, Principal principal) {
+        var account = accounts.active(principal.getName());
+        tasks.require(id, account);
+        var stored = jdbc.query("SELECT storage_name, content_type FROM sti.task_photo WHERE id = ? AND task_id = ?",
+            (rs, n) -> Map.entry(rs.getString("storage_name"), rs.getString("content_type")), photoId, id)
+            .stream().findFirst().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        return bytes(uploads.read(stored.getKey()), stored.getValue());
+    }
+
+    @GetMapping("/api/tasks/{id}/signature")
+    ResponseEntity<byte[]> signature(@PathVariable UUID id, @RequestParam(required = false) UUID signatureId,
+                                     Principal principal) {
+        var account = accounts.active(principal.getName());
+        tasks.require(id, account);
+        String sql = "SELECT storage_name FROM sti.task_signature WHERE task_id = ?"
+            + (signatureId == null ? " AND superseded_at IS NULL" : " AND id = ?");
+        Object[] parameters = signatureId == null ? new Object[]{id} : new Object[]{id, signatureId};
+        String name = jdbc.query(sql, (rs, n) -> rs.getString("storage_name"), parameters)
+            .stream().findFirst().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        return bytes(uploads.read(name), "image/png");
+    }
+
+    /**
+     * Conformity with finished work. Face to face the operator presents the task on its own device and the signer
+     * never logs in; remotely the company's CLIENTE signs from its own account. Both record the session account.
+     */
+    @PostMapping("/api/tasks/{id}/signature")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Transactional
+    Tasks.Signature sign(@PathVariable UUID id, @RequestBody NewSignature input, Principal principal) {
+        var account = accounts.active(principal.getName());
+        if (input == null || input.signerName() == null || input.image() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        String signer = input.signerName().trim();
+        if (signer.isEmpty() || signer.length() > 200) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        LocalDate signedOn = signedOn(input.signedOn());
+        var location = tasks.checked(input.location());
+        var task = tasks.require(id, account);
+        if (!task.status().equals("FINALIZADO")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        boolean remote = account.role().equals("CLIENTE");
+        boolean presenter = remote || OPERATORS.contains(account.role())
+            || task.assignees().stream().anyMatch(assignee -> assignee.id().equals(account.id()));
+        if (!presenter) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        if (task.signed()) throw new ResponseStatusException(HttpStatus.CONFLICT);
+
+        byte[] stroke = decode(input.image());
+        if (stroke.length == 0 || stroke.length > Uploads.MAX_SIGNATURE_BYTES
+            || !"image/png".equals(Uploads.imageType(stroke))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        UUID signature = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO sti.task_signature (id, task_id, storage_name, byte_size, signer_name, signed_on,
+                                            presented_by, remote, latitude, longitude, accuracy_m, location_absent_reason)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            signature, id, uploads.store(stroke, "image/png"), stroke.length, signer, signedOn, account.id(), remote,
+            location.latitude(), location.longitude(), location.accuracyM(), location.absentReason());
+        tasks.event(id, "FIRMA", null, null, account.id(), null, location);
+        return tasks.signatures(id).stream().filter(stored -> stored.id().equals(signature)).findFirst()
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR));
+    }
+
+    /** The company's CLIENTE may document its own request; assignees and operators document the work. */
+    private boolean mayAttach(Accounts.Account account, Tasks.Task task) {
+        return OPERATORS.contains(account.role()) || account.role().equals("CLIENTE")
+            || task.assignees().stream().anyMatch(assignee -> assignee.id().equals(account.id()));
+    }
+
+    private static ResponseEntity<byte[]> bytes(byte[] content, String contentType) {
+        return ResponseEntity.ok().header("Content-Type", contentType).header("Cache-Control", "no-store")
+            .header("Content-Disposition", "inline").body(content);
+    }
+
+    private static byte[] read(MultipartFile file) {
+        if (file == null || file.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        try {
+            return file.getBytes();
+        } catch (IOException failure) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private static byte[] decode(String image) {
+        String payload = image.contains(",") ? image.substring(image.indexOf(',') + 1) : image;
+        try {
+            return Base64.getDecoder().decode(payload.trim());
+        } catch (IllegalArgumentException invalid) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private static LocalDate signedOn(String value) {
+        if (value == null || value.isBlank()) return LocalDate.now();
+        try {
+            return LocalDate.parse(value.trim());
+        } catch (DateTimeParseException invalid) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
     }
 
     /** Each assignee confirms its own completion; the last pending confirmation finishes the task. */

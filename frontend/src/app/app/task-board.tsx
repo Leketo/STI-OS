@@ -1,14 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { deviceLocation, errorFor, postWithCsrf, sendWithCsrf } from "./api";
+import { deviceLocation, errorFor, postWithCsrf, sendWithCsrf, uploadWithCsrf } from "./api";
+import { SignaturePad } from "./signature-pad";
 
 type Role = "ADMIN" | "SUPERVISOR" | "USUARIO" | "CLIENTE";
 type Assignee = { id: string; name: string; confirmed: boolean };
 type Task = {
   id: string; code: string; projectId: string; title: string; detail: string | null;
   status: string; createdAt: string; assignees: Assignee[]; confirmed: number; pending: number;
+  photoCount: number; signed: boolean;
 };
+type Photo = { id: string; contentType: string; byteSize: number; uploadedAt: string; uploadedBy: string };
+type Signature = { id: string; signerName: string; signedOn: string; signedAt: string; presentedBy: string; remote: boolean; current: boolean };
+type TaskEvent = { id: string; kind: string; fromStatus: string | null; toStatus: string | null; actorName: string; occurredAt: string; locationAbsentReason: string | null };
+type Detail = Task & { events: TaskEvent[]; photos: Photo[]; signatures: Signature[] };
 type Project = { id: string; clientId: string; name: string };
 type Operator = { id: string; name: string; role: Role };
 
@@ -17,6 +23,8 @@ const COLUMNS = [
   { status: "EN_PROCESO", label: "En proceso" },
   { status: "FINALIZADO", label: "Finalizadas" },
 ];
+const INVOICED = { status: "FACTURADO", label: "Facturadas" };
+const MAX_PHOTOS = 5;
 const inputClass = "w-full rounded-lg border border-slate-300 px-3 py-2.5 focus:border-blue-600 focus:outline-none";
 const actionClass = "rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold hover:bg-slate-100 disabled:opacity-60";
 
@@ -30,6 +38,8 @@ export function TaskBoard({ account }: { account: { id: string; role: Role } }) 
   const [projectId, setProjectId] = useState("");
   const [title, setTitle] = useState("");
   const [detail, setDetail] = useState("");
+  const [opened, setOpened] = useState<Detail | null>(null);
+  const [signing, setSigning] = useState("");
 
   const load = useCallback(async () => {
     const [taskResponse, projectResponse] = await Promise.all([
@@ -45,6 +55,64 @@ export function TaskBoard({ account }: { account: { id: string; role: Role } }) 
     }
   }, [operator]);
 
+  async function openDetail(taskId: string) {
+    if (opened && opened.id === taskId) { setOpened(null); return; }
+    setBusy(taskId);
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`, { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) { setMessage(errorFor(response)); return; }
+      setOpened(await response.json() as Detail);
+    } catch {
+      setMessage("No se pudo cargar el detalle de la tarea.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function refreshDetail(taskId: string) {
+    const response = await fetch(`/api/tasks/${taskId}`, { credentials: "same-origin", cache: "no-store" });
+    if (response.ok) setOpened(await response.json() as Detail);
+  }
+
+  async function upload(taskId: string, file: File) {
+    setBusy(taskId);
+    setMessage("");
+    try {
+      const response = await uploadWithCsrf(`/api/tasks/${taskId}/photos`, file);
+      if (!response.ok) {
+        setMessage(response.status === 413 ? "La foto supera los 10 MB." : errorFor(response));
+        return;
+      }
+      await load();
+      await refreshDetail(taskId);
+    } catch {
+      setMessage("No se pudo subir la foto.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function sign(taskId: string, signerName: string, signedOn: string, image: string) {
+    setBusy(taskId);
+    setMessage("");
+    try {
+      const response = await postWithCsrf(`/api/tasks/${taskId}/signature`, {
+        signerName, signedOn, image, location: await deviceLocation(),
+      });
+      if (!response.ok) {
+        setMessage(response.status === 409 ? "La tarea ya tiene una firma vigente." : errorFor(response));
+        return;
+      }
+      setSigning("");
+      await load();
+      await refreshDetail(taskId);
+    } catch {
+      setMessage("No se pudo registrar la firma.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   useEffect(() => {
     let active = true;
     Promise.resolve().then(load).catch(() => { if (active) setMessage("No se pudieron cargar las tareas."); });
@@ -58,6 +126,7 @@ export function TaskBoard({ account }: { account: { id: string; role: Role } }) 
       const response = await sendWithCsrf(method, path, body);
       if (!response.ok) { setMessage(errorFor(response)); return; }
       await load();
+      if (opened && opened.id === taskId) await refreshDetail(taskId);
     } catch {
       setMessage("No se pudo conectar con el servidor local. La acción pudo no registrarse.");
     } finally {
@@ -117,8 +186,58 @@ export function TaskBoard({ account }: { account: { id: string; role: Role } }) 
         <button className={actionClass} disabled={disabled} onClick={() => move(task, "POR_HACER")}>Volver a por hacer</button>}
       {task.status === "FINALIZADO" && operator &&
         <button className={actionClass} disabled={disabled} onClick={() => move(task, "EN_PROCESO")}>Reabrir</button>}
-      {account.role === "ADMIN" && task.status !== "FINALIZADO" &&
+      {task.status === "FINALIZADO" && !task.signed && (operator || mine || account.role === "CLIENTE") &&
+        <button className={actionClass} disabled={disabled}
+          onClick={() => setSigning(signing === task.id ? "" : task.id)}>Firmar conformidad</button>}
+      {task.status === "FINALIZADO" && task.signed && account.role === "ADMIN" &&
+        <button className={actionClass} disabled={disabled} onClick={() => move(task, "FACTURADO")}>Marcar facturada</button>}
+      {account.role === "ADMIN" && task.status !== "FINALIZADO" && task.status !== "FACTURADO" &&
         <button className={actionClass} disabled={disabled} onClick={() => move(task, "ANULADA")}>Anular</button>}
+    </div>;
+  }
+
+  function attachments(task: Task) {
+    const mine = task.assignees.some(assignee => assignee.id === account.id);
+    const open = task.status === "POR_HACER" || task.status === "EN_PROCESO";
+    if (!open || !(operator || mine || account.role === "CLIENTE") || task.photoCount >= MAX_PHOTOS) return null;
+    return <label className="mt-3 block text-xs text-slate-600">
+      Agregar foto ({task.photoCount}/{MAX_PHOTOS})
+      <input type="file" accept="image/jpeg,image/png" disabled={busy === task.id} className="mt-1 block w-full text-xs"
+        onChange={event => {
+          const file = event.target.files ? event.target.files[0] : null;
+          event.target.value = "";
+          if (file) upload(task.id, file);
+        }} />
+    </label>;
+  }
+
+  function panel(task: Task) {
+    if (!opened || opened.id !== task.id) return null;
+    return <div className="mt-3 space-y-3 rounded-lg bg-slate-50 p-3 text-xs">
+      {opened.photos.length > 0 && <div className="flex flex-wrap gap-2">
+        {opened.photos.map(photo => <a key={photo.id} href={`/api/tasks/${task.id}/photos/${photo.id}`}
+          target="_blank" rel="noreferrer" title={`Subida por ${photo.uploadedBy}`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={`/api/tasks/${task.id}/photos/${photo.id}`} alt={`Foto subida por ${photo.uploadedBy}`}
+            className="h-20 w-20 rounded border border-slate-300 object-cover" />
+        </a>)}
+      </div>}
+      {opened.signatures.map(signature => <div key={signature.id}
+        className={signature.current ? "rounded border border-emerald-300 bg-white p-2" : "rounded border border-slate-300 bg-white p-2 opacity-70"}>
+        <p className="font-semibold">{signature.current ? "Firma vigente" : "Firma superada"}</p>
+        <p>{signature.signerName} · {signature.signedOn} · presentada por {signature.presentedBy}
+          {signature.remote ? " (a distancia)" : " (presencial)"}</p>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={`/api/tasks/${task.id}/signature?signatureId=${signature.id}`} alt={`Firma de ${signature.signerName}`}
+          className="mt-1 h-16 bg-white" />
+      </div>)}
+      <ol className="space-y-1">
+        {opened.events.map(event => <li key={event.id}>
+          <span className="font-mono">{event.kind}</span>
+          {event.toStatus ? ` → ${event.toStatus}` : ""} · {event.actorName} · {new Date(event.occurredAt).toLocaleString()}
+          {event.locationAbsentReason ? ` · sin ubicación` : ""}
+        </li>)}
+      </ol>
     </div>;
   }
 
@@ -141,7 +260,11 @@ export function TaskBoard({ account }: { account: { id: string; role: Role } }) 
     return <article key={task.id} className="rounded-xl border border-slate-200 bg-white p-3">
       <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
         <span className="font-mono">{task.code}</span>
-        {task.assignees.length > 1 && <span>{task.confirmed} de {task.assignees.length}</span>}
+        <span className="flex items-center gap-2">
+          {task.photoCount > 0 && <span title="Fotos adjuntas">{task.photoCount} 📷</span>}
+          {task.signed && <span className="text-emerald-700" title="Firma vigente">Firmada</span>}
+          {task.assignees.length > 1 && <span>{task.confirmed} de {task.assignees.length}</span>}
+        </span>
       </div>
       <h4 className="mt-1 font-semibold">{task.title}</h4>
       <p className="mt-1 text-xs text-slate-600">{project ? project.name : "Proyecto fuera de tu alcance"}</p>
@@ -157,7 +280,15 @@ export function TaskBoard({ account }: { account: { id: string; role: Role } }) 
         {task.assignees.length === 0 && <li className="text-xs text-slate-500">Sin asignar</li>}
       </ul>
       {assignment(task)}
+      {attachments(task)}
       {actions(task)}
+      <button type="button" className="mt-2 text-xs font-semibold text-blue-700 hover:underline"
+        disabled={busy === task.id} onClick={() => openDetail(task.id)}>
+        {opened && opened.id === task.id ? "Ocultar detalle" : "Ver detalle e historial"}
+      </button>
+      {signing === task.id && <SignaturePad busy={busy === task.id} onCancel={() => setSigning("")}
+        onSign={(signerName, signedOn, image) => sign(task.id, signerName, signedOn, image)} />}
+      {panel(task)}
     </article>;
   }
 
@@ -204,8 +335,8 @@ export function TaskBoard({ account }: { account: { id: string; role: Role } }) 
 
     {message && <p role="alert" className="text-sm text-red-700">{message}</p>}
 
-    <div className="grid gap-4 sm:grid-cols-3">
-      {COLUMNS.map(column => {
+    <div className={operator ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-4" : "grid gap-4 sm:grid-cols-3"}>
+      {(operator ? [...COLUMNS, INVOICED] : COLUMNS).map(column => {
         const visible = tasks.filter(task => task.status === column.status);
         return <section key={column.status} className="rounded-xl bg-slate-50 p-3">
           <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-600">

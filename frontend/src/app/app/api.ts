@@ -16,6 +16,22 @@ export function postWithCsrf(path: string, body: object): Promise<Response> {
   return sendWithCsrf("POST", path, body);
 }
 
+/** Multipart upload. The browser sets its own Content-Type with the boundary, so we must not. */
+export async function uploadWithCsrf(path: string, file: File): Promise<Response> {
+  const tokenResponse = await fetch("/api/auth/csrf", { credentials: "same-origin", cache: "no-store" });
+  if (!tokenResponse.ok) throw new Error("unavailable");
+  const csrf = await tokenResponse.json() as { token: string; headerName: string };
+  const body = new FormData();
+  body.append("file", file);
+  return fetch(path, {
+    method: "POST",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { [csrf.headerName]: csrf.token },
+    body,
+  });
+}
+
 export function errorFor(response: Response): string {
   if (response.status === 400) return "Revisá los datos ingresados.";
   if (response.status === 404) return "La tarea ya no está disponible para tu cuenta.";

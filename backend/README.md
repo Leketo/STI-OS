@@ -70,7 +70,17 @@ Visibility: ADMIN everything, SUPERVISOR everything except cancelled, USUARIO on
 
 Every defined step stores actor, instant and device location in `task_event`. Coordinates **or** an explicit absence reason must arrive; a step with neither is rejected. That follows the decision of 26/10/2026: a device that cannot obtain a fix records why instead of blocking a technician on site. Assignment and unassignment are the exception, because the client has not defined whether location applies there. `occurred_at` defaults to `clock_timestamp()`, not `now()`, so a confirmation and the `FINALIZADO` it triggers keep their order inside one transaction.
 
-Photos, client signature and the `FACTURADO` transition are not implemented.
+## Photos, signature and invoicing
+
+Migration `V3__signatures_photos.sql` adds `task_photo` and `task_signature`. Endpoints: `POST /api/tasks/{id}/photos` (multipart), `GET /api/tasks/{id}/photos/{photoId}`, `POST /api/tasks/{id}/signature` and `GET /api/tasks/{id}/signature`.
+
+**Bytes never live in the database and never under Nginx.** They go to the private uploads directory, `STI_UPLOADS_DIR` (`sti.uploads.dir`), which defaults to `output/backend-local/uploads` for development and must point at the private server path in deployment. The backend streams them only to an account that can already see the task, with `Cache-Control: no-store`. Storage names are generated as UUIDs; no part of a request ever reaches the file system, and reads are confined to the configured root.
+
+Photos: at most five per task, JPEG or PNG, 10 MB each. The declared content type is **not** trusted — the file is accepted only if its own first bytes are a JPEG or PNG signature. Assignees, ADMIN, SUPERVISOR and the company's CLIENTE may upload while the task is open; a closed task takes no more photos.
+
+Signature: only on a `FINALIZADO` task. Face to face, an operator or assignee presents the task on its own device and the signer types a name and draws without logging in there; remotely, the company's CLIENTE signs from its own account, which is recorded as `remote`. Either way the signature stores the session account, the instant, the signer's name, the chosen date, the stroke as PNG and the device location under the same coordinates-or-reason rule. A partial unique index guarantees at most **one signature in force** per task, so a second attempt returns 409. Reopening a task supersedes its signature and keeps it as evidence.
+
+`FINALIZADO → FACTURADO` is ADMIN only and requires a signature in force. `FACTURADO` is terminal: nothing moves out of it, and USUARIO and CLIENTE never see it.
 
 ## Runtime and migration separation
 
@@ -115,8 +125,8 @@ CLIENTE receives only its own company's directory and projects. An unknown or fo
 
 - Fresh security/reliability review and PostgreSQL 18 verification. Everything below was tested only on PostgreSQL 15.
 - Login rate limiting at Nginx before public authentication; local login and proxy do not change the published demo.
-- Client signature, the five photos in private storage, and the `FINALIZADO → FACTURADO` transition a valid signature unlocks. The task domain, assigned-user isolation, transitions, confirmations and GPS traceability are implemented; signatures and attachments are not.
-- Browser verification of the authenticated task board. Its API behaviour was verified over HTTP; the React board itself has not been exercised in a real browser.
+- Browser verification of the authenticated task board, the signature pad and photo upload. Their API behaviour was verified over HTTP; the React UI itself has not been exercised in a real browser.
+- A private uploads path on the server, its backup coverage and the DB/uploads consistency question the VPS report already raised. Photos and signatures are files now, not rows.
 - Deployed JAR, health/auth/session/privilege checks, external port test, external restore and rollback exercise before real data.
 
 The authentication foundation was committed and pushed to `origin/main` as `91e76d8503fe87f857f0db64ba1ada9d8155ac14`, the client and account onboarding as `673075c`, and the task domain as `4393228`. None of them is deployed. `https://app.stisistemas.com` still serves the earlier demo commit `bef587fbebcf921d39eb5ec2b2572606ec418c7a`. Next verify PostgreSQL 18 compatibility and prepare a reviewed revision for the VPS agent. Keep local credentials and data out of that handoff.

@@ -27,7 +27,7 @@ Traps that already cost time, all confirmed on this machine:
 - Launching that script as a hidden background process with redirected output **sometimes dies before Maven runs**, leaving no output and its synthetic cluster still listening. It happened twice on 2026-10-26, to two different agents, and re-running it worked each time. It is a launcher flake, not a backend failure: do not diagnose the backend over it. Check for a leftover `output/backend-test-*` cluster with `pg_ctl status` and stop it before retrying.
 - Docker daemon is unavailable; PostgreSQL 15 is the local version and 18 is the VPS one.
 
-Current state of the work: authentication, accounts, clients, projects and the full task domain are implemented and verified locally. Not implemented: client signature, the five photos, and the `FINALIZADO → FACTURADO` transition. Not verified anywhere: PostgreSQL 18 and the VPS. The server agent's pending work is written in `server/mensaje-codex-verificar-pg18.md` and has not been handed over yet.
+Current state of the work: authentication, accounts, clients, projects, the full task domain, client signature, photos and invoicing are implemented and verified locally. The functional cycle the client described is closed end to end. Not verified anywhere: PostgreSQL 18 and the VPS. The server agent's pending work is written in `server/mensaje-codex-verificar-pg18.md` and has not been handed over yet.
 
 ## Preserve
 
@@ -89,6 +89,20 @@ Published as `4393228` on `origin/main`. Not verified: the React board in a real
 
 Two fixes found by verification, not by review: the production bundle needs `STI_API_ORIGIN` at **build** time or it ships no `/api` rewrites, and `task_event.occurred_at` uses `clock_timestamp()` because `now()` gave a confirmation and the `FINALIZADO` it triggers the same instant and lost their order.
 
+## Signature, photos and invoicing, 2026-10-26
+
+Decisions taken by the user, recorded in `docs/definiciones-funcionales.md`: photos are **JPEG and PNG up to 10 MB**, verified by their own bytes rather than by the declared type; a superseded signature is **kept as evidence** when a signed task is reopened; and photos may be uploaded by assignees, ADMIN, SUPERVISOR **and the company's CLIENTE**, while the task is open.
+
+Implemented: migration `V3__signatures_photos.sql`, photo upload and streaming, the signature endpoint with its PNG stroke, and the ADMIN-only `FINALIZADO → FACTURADO` transition that a signature in force unlocks and that nothing moves out of. In the UI: a signature pad drawn with finger or stylus, photo upload with a counter, thumbnails, and an expandable panel with photos, signatures and the full history.
+
+Bytes live in the private uploads directory (`STI_UPLOADS_DIR`, development default `output/backend-local/uploads`), never in the database and never under Nginx. The backend streams them only to an account that can already see the task.
+
+Verified: **19/19** integration tests on isolated PostgreSQL 15.3; frontend typecheck and ESLint clean; production build with the proxy baked in; and an end-to-end HTTP run through the frontend proxy that rejected a non-image, stored and downloaded a PNG byte-identical, refused invoicing before the signature, signed, refused a second signature with 409, served the stroke as `image/png`, invoiced, refused to leave `FACTURADO`, and on a second task confirmed that reopening leaves the signature stored but no longer in force.
+
+Not verified: the React board, the signature pad and the upload control in a real browser. That check is still pending from the previous session.
+
+One test changed meaning rather than breaking: a USUARIO asking for `FACTURADO` now gets 403 instead of 400, because the role can never invoice and the permission is evaluated before the transition's validity.
+
 ## Verification details
 
 - Main Java sources compiled against Boot 4.1.2. The 12-test result above supersedes the initial 10-test foundation run.
@@ -98,8 +112,8 @@ Two fixes found by verification, not by review: the production bundle needs `STI
 
 ## Next steps
 
-1. Browser-verify the authenticated task board once the Chrome extension is available again.
-2. Next slice: client signature, the five photos in private storage, and the ADMIN-only `FINALIZADO → FACTURADO` transition that a valid signature unlocks.
+1. Browser-verify the authenticated task board, the signature pad and the photo upload once the Chrome extension is available again.
+2. Tell the server agent that photos and signatures are **files**: the deployment needs the private uploads path wired through `STI_UPLOADS_DIR`, owned by the backend user, outside Nginx, and inside the backup. The 25/10 report already listed `/srv/sti-os/data/uploads`.
 3. Hand `server/mensaje-codex-verificar-pg18.md` to the server agent: PostgreSQL 18 parity, credential delivery and Nginx login rate limiting. The suite is Windows-only, so that message carries the equivalent commands; the VPS has no Maven installed.
 4. Use the latest published commit for the PostgreSQL 18 parity check and VPS handoff. Deploy and validate it only when those checks and configuration are ready; the VPS still serves the earlier demo. No CI/CD pipeline is implemented yet.
 
