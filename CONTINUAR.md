@@ -24,6 +24,7 @@ Traps that already cost time, all confirmed on this machine:
 - **Stop the local backend before packaging.** Windows locks the running JAR and the Maven rename fails.
 - `STI_API_ORIGIN` must be set **at build time** for the production bundle, not only at runtime: `next.config.ts` resolves it inside `rewrites()`, which Next evaluates during the build. Without it the bundle ships zero `/api` rewrites.
 - `backend/scripts/test-local.ps1` builds its own throwaway PostgreSQL cluster. It never touches the persistent dev database or the VPS.
+- Launching that script as a hidden background process with redirected output **sometimes dies before Maven runs**, leaving no output and its synthetic cluster still listening. It happened twice on 2026-10-26, to two different agents, and re-running it worked each time. It is a launcher flake, not a backend failure: do not diagnose the backend over it. Check for a leftover `output/backend-test-*` cluster with `pg_ctl status` and stop it before retrying.
 - Docker daemon is unavailable; PostgreSQL 15 is the local version and 18 is the VPS one.
 
 Current state of the work: authentication, accounts, clients, projects and the full task domain are implemented and verified locally. Not implemented: client signature, the five photos, and the `FINALIZADO → FACTURADO` transition. Not verified anywhere: PostgreSQL 18 and the VPS. The server agent's pending work is written in `server/mensaje-codex-verificar-pg18.md` and has not been handed over yet.
