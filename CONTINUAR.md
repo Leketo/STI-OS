@@ -4,7 +4,7 @@ Updated: 2026-10-26. This file describes the desktop repository, not the separat
 
 ## Start here, next session
 
-Repository is clean and pushed: `origin/main` at `6c59267`, task domain at `4393228`. Nothing is deployed; the VPS still serves the old demo.
+Everything is pushed to `origin/main`; the task domain is commit `4393228`. Check `git log -1` for the current head instead of trusting a hash written here. Nothing is deployed; the VPS still serves the old demo.
 
 **The one thing left open from the last session: the authenticated task board was never opened in a real browser.** Everything else about it was verified over HTTP. The Chrome extension disconnected mid-check, so that is the first job: open `/app`, log in as the local ADMIN, create a project, create a task, assign it, start it, confirm it, reopen it and cancel it, and confirm the UI matches the API behaviour described below. If the browser is unavailable again, say so and move on; do not re-verify over HTTP and call it a browser check.
 
