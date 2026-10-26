@@ -2,6 +2,32 @@
 
 Updated: 2026-10-26. This file describes the desktop repository, not the separate VPS handoff file.
 
+## Start here, next session
+
+Repository is clean and pushed: `origin/main` at `6c59267`, task domain at `4393228`. Nothing is deployed; the VPS still serves the old demo.
+
+**The one thing left open from the last session: the authenticated task board was never opened in a real browser.** Everything else about it was verified over HTTP. The Chrome extension disconnected mid-check, so that is the first job: open `/app`, log in as the local ADMIN, create a project, create a task, assign it, start it, confirm it, reopen it and cancel it, and confirm the UI matches the API behaviour described below. If the browser is unavailable again, say so and move on; do not re-verify over HTTP and call it a browser check.
+
+Local stack, if the processes below are gone (a reboot kills them):
+
+```powershell
+./backend/scripts/start-local.ps1          # reuses the persistent cluster and applies new migrations
+./backend/scripts/run-local.ps1            # backend on 127.0.0.1:8080, separate terminal
+cd frontend; $env:STI_API_ORIGIN = 'http://127.0.0.1:8080'; npm run dev    # http://localhost:3000/login
+```
+
+Left running at the end of the session: PostgreSQL on `127.0.0.1:55432`, backend on `127.0.0.1:8080`, a **standalone production** frontend on `127.0.0.1:3021` (that one already has the `/api` proxy baked in, so `http://127.0.0.1:3021/app` works immediately), and a **pre-existing dev server on `:3000` that belongs to the user — do not kill it**. Local ADMIN credentials: `output/backend-local/credentials.json`, Git-ignored and ACL-restricted; never paste the values anywhere.
+
+Traps that already cost time, all confirmed on this machine:
+
+- Build with **JDK 21 explicitly**; Maven picks 17 by default here.
+- **Stop the local backend before packaging.** Windows locks the running JAR and the Maven rename fails.
+- `STI_API_ORIGIN` must be set **at build time** for the production bundle, not only at runtime: `next.config.ts` resolves it inside `rewrites()`, which Next evaluates during the build. Without it the bundle ships zero `/api` rewrites.
+- `backend/scripts/test-local.ps1` builds its own throwaway PostgreSQL cluster. It never touches the persistent dev database or the VPS.
+- Docker daemon is unavailable; PostgreSQL 15 is the local version and 18 is the VPS one.
+
+Current state of the work: authentication, accounts, clients, projects and the full task domain are implemented and verified locally. Not implemented: client signature, the five photos, and the `FINALIZADO → FACTURADO` transition. Not verified anywhere: PostgreSQL 18 and the VPS. The server agent's pending work is written in `server/mensaje-codex-verificar-pg18.md` and has not been handed over yet.
+
 ## Preserve
 
 - Public demo commit: `bef587fbebcf921d39eb5ec2b2572606ec418c7a` at `https://app.stisistemas.com`.
