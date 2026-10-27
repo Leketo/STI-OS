@@ -130,6 +130,19 @@ How it ran, and what that establishes:
 
 What this does **not** establish: the deployed service, HTTPS and Secure cookies, the credential delivery under systemd at runtime, Nginx rate limiting, or backup consistency between the database and the uploads directory.
 
+## The backend runs on the VPS, 2026-10-27
+
+Reported by a server session with real administrative access, and not independently verified from this desktop: **the service is active on `127.0.0.1:8080` and `/api/health` returns 200.** Since that endpoint includes database connectivity, the application reached PostgreSQL 18 using credentials delivered by systemd — which answers the question left open on 26/10, when we knew the credential files arrived but not that the application consumed them.
+
+Also reported: the public demo still answers 200 and was not modified; Nginx validates and the only enabled site is still the demo's; `NeedDaemonReload=no`, so nothing is half-applied; `/etc/sudoers.d/codex-sti-os` does not exist, meaning that session always had sudo and the earlier one was blocked by its own sandbox, not by the host. The audit found the state left by the previous session coherent and changed nothing. Its report is at `/srv/sti-os/private/docs/20261027T025309Z/REPORT.md`, `root:root 0600`.
+
+Two things to keep in view:
+
+- The service is running but **disabled** for autostart. That is the right state for now, but it is a decision to revisit, not an oversight to inherit.
+- The unit modified at 02:41 has no `.bak` under `/etc/systemd/system`; the backups live as `*.before` inside the evidence directory. The rollback path exists but is not where someone would look for it first.
+
+Still pending: the login rate limit is prepared and **not active**. Turning it on means replacing the currently enabled site file, which is the one serving the demo — so it should be done together with exposing `/api`, not before, since taking that risk buys nothing until then.
+
 ## VPS deployment: blocked on an administrative session, 2026-10-27
 
 A second server session could not act at all: `sudo` was refused by its isolation, `/home/ubuntu/sti-os` returned permission denied, and `systemctl` could not reach the system bus. It changed nothing — no pull, no services, no Nginx, no database, no credentials — and reported the exact errors instead of working around them. Its notes are on the server as `informe-vps-2026-10-27-continuacion.md`.
