@@ -6,7 +6,7 @@ Updated: 2026-10-26. This file describes the desktop repository, not the separat
 
 Everything is pushed to `origin/main`; the task domain is commit `4393228`. Check `git log -1` for the current head instead of trusting a hash written here. Nothing is deployed; the VPS still serves the old demo.
 
-**The one thing left open from the last session: the authenticated task board was never opened in a real browser.** Everything else about it was verified over HTTP. The Chrome extension disconnected mid-check, so that is the first job: open `/app`, log in as the local ADMIN, create a project, create a task, assign it, start it, confirm it, reopen it and cancel it, and confirm the UI matches the API behaviour described below. If the browser is unavailable again, say so and move on; do not re-verify over HTTP and call it a browser check.
+**The browser verification is done.** It ran on 2026-10-27 against the real VPS deployment through an SSH tunnel, covering the location-denied rule, a mouse-drawn signature, reopening, photo upload and the CLIENTE view. See the section below. What remains is the public cutover, which is operational work on the server, not application work.
 
 Local stack, if the processes below are gone (a reboot kills them):
 
@@ -129,6 +129,22 @@ How it ran, and what that establishes:
 - `pg_hba` did **not** block the test roles. An earlier attempt failed with `28P01`, which looked like a configuration wall but was only a pre-existing `test_migrator` role left by the previous session carrying a different password. Worth remembering: `28P01` means the connection was accepted and the password was wrong; a real `pg_hba` block says so by name.
 
 What this does **not** establish: the deployed service, HTTPS and Secure cookies, the credential delivery under systemd at runtime, Nginx rate limiting, or backup consistency between the database and the uploads directory.
+
+## Browser verification, done at last, 2026-10-27
+
+Verified from this desktop, driving Chrome against the **real VPS deployment** through an SSH tunnel to `127.0.0.1:3002`, with no port exposed. This closes the check that had been pending since the task board was written.
+
+- Login as ADMIN through the proxy, board rendering real data in four columns.
+- **The location rule works in a real browser.** A state change ran with the location permission never granted: the action completed and the history recorded `ESTADO → EN_PROCESO · sin ubicación`. That is the decision taken on 26/10, now confirmed against the deployment rather than against a simulation.
+- **A signature drawn with the mouse** was stored and the stroke came back rendered, served by the backend from the private uploads directory. `Firmar conformidad` was replaced by `Marcar facturada`, so invoicing unlocks only once signed.
+- **Reopening superseded it**: the card returned to EN_PROCESO and the signature stayed as `Firma superada`, greyed out but intact with its stroke.
+- **A photo uploaded** from a real file picker: counter `1/5`, badge on the card, thumbnail served back.
+- **The CLIENTE view obeys its rules**: three columns with no `Facturadas`, no state buttons at all, no unassign control, but it can attach photos and read the history.
+- Logout returns `/app` to a 307, and the public demo stayed at 200 throughout.
+
+Not re-done here, because the same code was already browser-verified locally on 26/10: the remote signature by a CLIENTE, and the 390 px layout. The window resize did not take effect in this session and was not worth fighting.
+
+One usability observation, not a defect: **every action waits up to ten seconds** while the browser tries for a location fix before sending. With permission granted it is instant, but a technician who denies it, or who is somewhere without a fix, sees "Guardando…" on every step. That is the direct cost of the rule, and it can be cut to three or four seconds without changing the rule.
 
 ## The whole cycle ran on the VPS, 2026-10-27
 
