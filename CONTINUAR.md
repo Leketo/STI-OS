@@ -130,6 +130,14 @@ How it ran, and what that establishes:
 
 What this does **not** establish: the deployed service, HTTPS and Secure cookies, the credential delivery under systemd at runtime, Nginx rate limiting, or backup consistency between the database and the uploads directory.
 
+## VPS deployment: blocked on an administrative session, 2026-10-27
+
+A second server session could not act at all: `sudo` was refused by its isolation, `/home/ubuntu/sti-os` returned permission denied, and `systemctl` could not reach the system bus. It changed nothing — no pull, no services, no Nginx, no database, no credentials — and reported the exact errors instead of working around them. Its notes are on the server as `informe-vps-2026-10-27-continuacion.md`.
+
+So the deployment is not blocked by anything technical: it needs a session that actually holds administrative access on the host, or the work done by hand over SSH.
+
+One thing it raised that must be reconciled before the service starts: the credential mechanism **reported** on 27/10 is not the one **documented** on 26/10. The unit already carried `LoadCredential=db-runtime:/etc/sti-os/credentials/db-runtime`, a single file holding only the password, while our configuration expects a config tree with files named `STI_DB_URL`, `STI_DB_USER`, `STI_DB_PASSWORD` and `STI_UPLOADS_DIR`. The previous session says it added those files; nobody has yet confirmed the application reads them. Treat both as present and verify which one the running process actually consumes.
+
 ## VPS first pass, 2026-10-27: blocked on repository access
 
 The server agent started the handoff and ran out of quota mid-run; its own report is on the server as `informe-vps-2026-10-27.md`. Nothing it reports has been verified from this desktop.
