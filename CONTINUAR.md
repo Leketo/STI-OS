@@ -117,6 +117,21 @@ Re-verified after the fixes: 19/19, typecheck and ESLint clean, production build
 
 What that pass did **not** cover, stated by the tester: a forced sixth photo straight to the server, which is now covered by the test above; a physical device or real GPS fix; PostgreSQL 18; the VPS.
 
+## VPS first pass, 2026-10-27: blocked on repository access
+
+The server agent started the handoff and ran out of quota mid-run; its own report is on the server as `informe-vps-2026-10-27.md`. Nothing it reports has been verified from this desktop.
+
+**The blocker is access, not code: the VPS cannot clone the repository.** It is private, and the server has no deploy key, no token and no stored credential. The agent looked in the environment, in the codex auth file, in its own platform token and in local snapshots, found nothing, and stopped instead of improvising. That is the correct outcome, and it blocks point 1 entirely: the suite cannot run against PostgreSQL 18 without the source.
+
+What it reported doing before the block, all pending desktop confirmation:
+
+- **The credential mechanism is confirmed as `LoadCredential`, not a config tree of its own.** The existing unit carried a single `db-runtime` file holding only the password. The agent added files named exactly `STI_DB_URL`, `STI_DB_USER`, `STI_DB_PASSWORD` and `STI_UPLOADS_DIR`, delivered at `/run/credentials/sti-backend.service/` as `root:root 0400`, so `SPRING_CONFIG_IMPORT=configtree:` resolves. Our design holds; it needed the extra files, not a different approach.
+- The earlier report said "Java 21 installed"; the server actually had only the **JRE**. The agent installed `openjdk-21-jdk-headless` to be able to build. Reported-versus-verified paid off again.
+- Nginx rate limiting prepared in `sites-available` and left disabled. It proposed 10 login attempts per IP per 10 minutes with burst 3, pending the owner's decision. It also found that enabling the new site alongside the existing one collides on `default_server`: activation must **replace** the current file, not add to it.
+- **The backup is sequential, not atomic**: `pg_dump` runs, then uploads are tarred. A photo or signature written in between leaves a row without its file or a file without its row. It documented this rather than changing the script. Worth answering from our side: a missing file is not a crash — `Uploads.read` returns 404 for that one image and the rest of the task still loads.
+
+Unblocking is a decision for the owner: a read-only deploy key on the VPS is the cleanest path.
+
 ## Verification details
 
 - Main Java sources compiled against Boot 4.1.2. The 12-test result above supersedes the initial 10-test foundation run.
