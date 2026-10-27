@@ -130,6 +130,18 @@ How it ran, and what that establishes:
 
 What this does **not** establish: the deployed service, HTTPS and Secure cookies, the credential delivery under systemd at runtime, Nginx rate limiting, or backup consistency between the database and the uploads directory.
 
+## The whole cycle ran on the VPS, 2026-10-27
+
+Reported by the server session, with evidence kept at `/srv/sti-os/private/docs/20261027T030011Z/`. Not independently verified from this desktop.
+
+**The functional cycle ran end to end on PostgreSQL 18.6 on the server**: the migrator JAR with the migration credentials (exit 0, Flyway validated the three migrations), the bootstrap JAR creating the first synthetic ADMIN (exit 0), then against `127.0.0.1:8080` login 204, `/api/auth/me` 200 as ADMIN, logout 204 and `/api/auth/me` 401 afterwards, plus CSRF 200, client/project/task creation 201, photo upload 201 and download 200, signature 201 and download 200.
+
+**The backup question is answered.** Today's backup included a real photo and signature on the same task; the database was restored into an isolated PostgreSQL 18.6, the tar extracted, and both rows kept the same `task_id` while both PNGs were readable with hashes matching the originals. That supersedes the 25/10 rehearsal, which proved nothing about this because the uploads directory was empty then. The synthetic data was cleaned afterwards and every count is back to zero.
+
+**The credential mechanism is settled: the config tree, not the legacy file.** The unit loads `STI_DB_URL`, `STI_DB_USER`, `STI_DB_PASSWORD` and `STI_UPLOADS_DIR` into `/run/credentials/sti-backend.service/` with `SPRING_CONFIG_IMPORT=configtree:`. The older `db-runtime`, holding only a password, is not loaded by that unit and nothing references it; it survives as residue and should be retired deliberately rather than left to confuse the next reader.
+
+Two failures during that run were the test harness, not the application: a trailing newline mismatch between the password the harness sent and the one bootstrap had received, which produced a first 401; and a `KeyError` while the harness serialised its own manifest, worked around by reading the metadata from the database.
+
 ## The backend runs on the VPS, 2026-10-27
 
 Reported by a server session with real administrative access, and not independently verified from this desktop: **the service is active on `127.0.0.1:8080` and `/api/health` returns 200.** Since that endpoint includes database connectivity, the application reached PostgreSQL 18 using credentials delivered by systemd — which answers the question left open on 26/10, when we knew the credential files arrived but not that the application consumed them.

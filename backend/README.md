@@ -125,8 +125,8 @@ CLIENTE receives only its own company's directory and projects. An unknown or fo
 
 ## Release gates still pending
 
-- Fresh security/reliability review. PostgreSQL 18 parity is **done**, verified on the server on 2026-10-27.
-- Login rate limiting at Nginx before public authentication; local login and proxy do not change the published demo.
+- Fresh security/reliability review. PostgreSQL 18 parity is **done**, and on 2026-10-27 the whole cycle — migrations, first ADMIN, login, task, photo, signature — ran on the server itself with credentials delivered by systemd's config tree.
+- The public cutover, still untouched: enabling the `/api` proxy, the login rate limit confirmed at 30 attempts per IP per 10 minutes with burst 5, and deploying the frontend. All three replace the currently enabled Nginx site, which is the one serving the demo, so they belong to a single controlled step with a tested rollback.
 - Browser verification of the authenticated task board, the signature pad and photo upload. Their API behaviour was verified over HTTP; the React UI itself has not been exercised in a real browser.
 - A private uploads path on the server, its backup coverage and the DB/uploads consistency question the VPS report already raised. Photos and signatures are files now, not rows.
 - Deployed JAR, health/auth/session/privilege checks, external port test, external restore and rollback exercise before real data.
