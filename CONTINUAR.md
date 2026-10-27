@@ -1,16 +1,45 @@
 # STI-OS local development handoff
 
-Updated: 2026-10-26. This file describes the desktop repository, not the separate VPS handoff file.
+Updated: 2026-10-27, end of the day the application went public. This file describes the desktop repository, not the separate VPS handoff file.
 
 ## Start here, next session
 
 Everything is pushed to `origin/main`. Check `git log -1` for the current head instead of trusting a hash written here.
 
-**The application is live at `https://app.stisistemas.com`**, published on 2026-10-27 and holding no accounts or data yet. The demo it replaced was the commit `bef587fbebcf921d39eb5ec2b2572606ec418c7a`.
+**The application is live at `https://app.stisistemas.com` and it is empty**: zero accounts, tasks, photos and signatures. That is deliberate. It replaced the demo that used to be served there, commit `bef587fbebcf921d39eb5ec2b2572606ec418c7a`.
 
-One loose end from that deployment: the frontend was built from `6a4b03f`, which carried a **two-second** location timeout. That was reverted to ten seconds in `ceddabe` right after, so **the deployed bundle is one commit behind on that single value**. Redeploy the frontend or decide to keep two seconds; do not leave it unexamined.
+Verified from this desktop, which is a host outside the VPS, after the final deployment of 2026-10-27:
 
-**The browser verification is done.** It ran on 2026-10-27 against the real VPS deployment through an SSH tunnel, covering the location-denied rule, a mouse-drawn signature, reopening, photo upload and the CLIENTE view. See the section below. What remains is the public cutover, which is operational work on the server, not application work.
+| From outside | |
+| --- | --- |
+| `/` and `/login` | 200 |
+| `/app` without a session | 307 |
+| `/api/health` | **404** — internal readiness is not published |
+| Session cookie | `Secure; HttpOnly; SameSite=Lax` over real HTTPS |
+| `Strict-Transport-Security` | `max-age=300`, on pages **and** error responses |
+| `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` | present, including error responses |
+| `X-Powered-By` | gone |
+
+### What to do next, in this order
+
+1. **Raise HSTS to a year.** It sits at `max-age=300` on purpose: HSTS is remembered by browsers, so a year-long value plus a certificate problem locks clients out with no way to reach them. It was left short until the deployment proved stable. It now has; raise it to `31536000`, still without `includeSubDomains` and without `preload`.
+2. **Create the first real ADMIN**, with the bootstrap JAR, when the owner decides. Until that exists, nobody has verified a valid login, session and logout against the **public** site — only against loopback and the tunnel. That verification is the last gap in the authentication story, and it cannot be closed without an account.
+3. **Decide the external backup.** Today the backup is local, on the same machine. If the VPS is lost, everything is lost with it, including the signatures, which are the client's proof of conformity. This is the one open risk that matters before real data is loaded, and it has been open since 25/10.
+4. Read the errors in `/srv/sti-os/private/docs/20261027T041938Z/REPORT.md`. Two checks failed during the header cutover; both triggered the rollback and the site came back at 200. The recovery worked, but nobody has looked at *why* they failed.
+
+### Rollback, tested and ready
+
+```bash
+sudo /srv/sti-os/private/docs/20261027T041938Z/rollback-current-production.sh
+```
+
+That returns both the frontend and Nginx to the previous production state. An earlier one for Nginx alone is at `20261027T040332Z/rollback-nginx.sh`. Server evidence lives under `/srv/sti-os/private/docs/<timestamp>/`, `root:root 0600`, one directory per session.
+
+### What is finished
+
+The application itself. Authentication, accounts, clients, projects, the whole task domain with states and multiple assignees, GPS traceability, photos, client signature and invoicing — implemented, covered by 19 integration tests, verified on PostgreSQL 18.6 on the server, and exercised in a real browser against the real deployment. The functional cycle the client described is closed end to end.
+
+What is **not** built, and was never in scope for this slice: editing a task's title or detail, deleting photos, notifications, the ERP integration and the time-tracking feature of the second commercial phase.
 
 Local stack, if the processes below are gone (a reboot kills them):
 
@@ -148,10 +177,11 @@ The server session additionally reported login/session/logout at 204/200/204 ove
 
 **There is no real ADMIN yet**: zero accounts, tasks, photos and signatures. The system is published and empty, which is the right state. The first administrator is created with the bootstrap JAR when the owner decides.
 
-Two hardening gaps found in the public response headers, neither a blocker, both server-side:
+Two hardening gaps were found in the public response headers right after the cutover, and both were closed the same day in a second deployment: `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: strict-origin-when-cross-origin` are now served on pages **and** on error responses, which is where they matter for a 401 or a 429. `X-Powered-By` was turned off in `next.config.ts` rather than stripped at the server, because the framework announcing itself is a code decision, not a proxy one.
 
-- **No `Strict-Transport-Security`.** A site that authenticates over HTTPS should pin clients to HTTPS.
-- `X-Powered-By: Next.js` announces the stack, and the page responses carry no `X-Content-Type-Options` or `X-Frame-Options`. Spring Security sets its own on `/api`, but the pages come from Next through Nginx.
+HSTS deliberately sits at `max-age=300` rather than a year. Browsers remember it: a long value combined with a certificate problem locks clients out for that whole period with no way to reach them. Short first, raise once the deployment has proved stable.
+
+That second deployment also carried the frontend rebuild that fixed the two-second location timeout left behind by the first one. Two checks failed mid-cutover; both triggered the tested rollback and the site returned 200. The errors are in `/srv/sti-os/private/docs/20261027T041938Z/REPORT.md` and have not been analysed.
 
 ## Browser verification, done at last, 2026-10-27
 
