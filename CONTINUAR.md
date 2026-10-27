@@ -23,9 +23,25 @@ Verified from this desktop, which is a host outside the VPS, after the final dep
 ### What to do next, in this order
 
 1. **Raise HSTS to a year.** It sits at `max-age=300` on purpose: HSTS is remembered by browsers, so a year-long value plus a certificate problem locks clients out with no way to reach them. It was left short until the deployment proved stable. It now has; raise it to `31536000`, still without `includeSubDomains` and without `preload`.
-2. **Create the first real ADMIN**, with the bootstrap JAR, when the owner decides. Until that exists, nobody has verified a valid login, session and logout against the **public** site — only against loopback and the tunnel. That verification is the last gap in the authentication story, and it cannot be closed without an account.
+2. **Create the first real ADMIN**, with the bootstrap JAR. Until that exists, nobody has verified a valid login, session and logout against the **public** site — only against loopback and the tunnel. That verification is the last gap in the authentication story, and it cannot be closed without an account. The owner does this by hand in their own SSH session, reading the password with `read -rsp` so it reaches neither the shell history nor an agent transcript: a password pasted into an agent prompt lives in that tool's log, which is why the first one generated for this account was rotated before it was ever used.
 3. **Decide the external backup.** Today the backup is local, on the same machine. If the VPS is lost, everything is lost with it, including the signatures, which are the client's proof of conformity. This is the one open risk that matters before real data is loaded, and it has been open since 25/10.
 4. Read the errors in `/srv/sti-os/private/docs/20261027T041938Z/REPORT.md`. Two checks failed during the header cutover; both triggered the rollback and the site came back at 200. The recovery worked, but nobody has looked at *why* they failed.
+
+### Launching the server agent
+
+Launch it from PuTTY as plain `codex`, with no flags, and run it **inside tmux**. Two sessions were lost to this: one that died when the SSH connection dropped, and two that could do nothing because they were sandboxed — `sudo` refused by `NoNewPrivileges`, no systemd bus, no DNS. Same `codexdev` user both times; the difference is how the session is started. A session that arrives through the Codex app-server daemon or the code-mode host runs confined and is useless for server work.
+
+Put this at the top of every server handoff so a bad session fails in ten seconds instead of ten minutes:
+
+```
+Antes de nada, comprobá tu propio entorno:
+  sudo -n true && echo sudo-ok
+  systemctl is-system-running
+  getent hosts app.stisistemas.com
+Si sudo está bloqueado por "no new privileges", no hay systemd, o no resuelve
+DNS, estás en una sesión sandboxeada y no sirve para este trabajo. Pará ahí y
+decilo, sin buscar rodeos.
+```
 
 ### Rollback, tested and ready
 
