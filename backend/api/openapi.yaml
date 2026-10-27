@@ -381,7 +381,8 @@ paths:
         Up to five photos per task, JPEG or PNG, 10 MB each. The declared content type is not trusted: the file is
         accepted only if its own bytes start with a JPEG or PNG signature. Assignees, ADMIN, SUPERVISOR and the
         company's CLIENTE may upload while the task is open. Bytes are stored in the private uploads directory,
-        never under Nginx.
+        never under Nginx. Each rejection has its own status so the caller can say what is wrong rather than
+        showing one generic message.
       parameters:
         - $ref: '#/components/parameters/TaskId'
         - $ref: '#/components/parameters/Csrf'
@@ -400,11 +401,13 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Photo'}
-        '400': {description: Not a JPEG or PNG, empty, or the task already has five photos}
+        '400': {description: Empty upload, or the task is closed to new photos}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {description: Missing or not visible}
+        '409': {description: The task already has five photos}
         '413': {description: Larger than 10 MB}
+        '415': {description: The bytes are neither JPEG nor PNG, whatever the name or declared type says}
   /api/tasks/{id}/photos/{photoId}:
     get:
       operationId: getTaskPhoto

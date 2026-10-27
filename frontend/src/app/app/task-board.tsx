@@ -25,6 +25,16 @@ const COLUMNS = [
 ];
 const INVOICED = { status: "FACTURADO", label: "Facturadas" };
 const MAX_PHOTOS = 5;
+const OPEN = ["POR_HACER", "EN_PROCESO"];
+
+/** The backend answers each rejection with its own status so we can name the real problem. */
+function photoError(status: number): string {
+  if (status === 415) return "Ese archivo no es una imagen: solo se aceptan JPEG y PNG, y se revisa el contenido, no el nombre.";
+  if (status === 413) return "La foto supera los 10 MB.";
+  if (status === 409) return `La tarea ya tiene ${MAX_PHOTOS} fotos.`;
+  if (status === 400) return "La tarea ya está cerrada y no admite más fotos.";
+  return errorFor({ status } as Response);
+}
 const inputClass = "w-full rounded-lg border border-slate-300 px-3 py-2.5 focus:border-blue-600 focus:outline-none";
 const actionClass = "rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold hover:bg-slate-100 disabled:opacity-60";
 
@@ -79,10 +89,7 @@ export function TaskBoard({ account }: { account: { id: string; role: Role } }) 
     setMessage("");
     try {
       const response = await uploadWithCsrf(`/api/tasks/${taskId}/photos`, file);
-      if (!response.ok) {
-        setMessage(response.status === 413 ? "La foto supera los 10 MB." : errorFor(response));
-        return;
-      }
+      if (!response.ok) { setMessage(photoError(response.status)); return; }
       await load();
       await refreshDetail(taskId);
     } catch {
@@ -198,8 +205,8 @@ export function TaskBoard({ account }: { account: { id: string; role: Role } }) 
 
   function attachments(task: Task) {
     const mine = task.assignees.some(assignee => assignee.id === account.id);
-    const open = task.status === "POR_HACER" || task.status === "EN_PROCESO";
-    if (!open || !(operator || mine || account.role === "CLIENTE") || task.photoCount >= MAX_PHOTOS) return null;
+    if (!OPEN.includes(task.status) || !(operator || mine || account.role === "CLIENTE")
+      || task.photoCount >= MAX_PHOTOS) return null;
     return <label className="mt-3 block text-xs text-slate-600">
       Agregar foto ({task.photoCount}/{MAX_PHOTOS})
       <input type="file" accept="image/jpeg,image/png" disabled={busy === task.id} className="mt-1 block w-full text-xs"
@@ -242,7 +249,7 @@ export function TaskBoard({ account }: { account: { id: string; role: Role } }) 
   }
 
   function assignment(task: Task) {
-    if (!operator || task.status === "FINALIZADO") return null;
+    if (!operator || !OPEN.includes(task.status)) return null;
     const free = operators.filter(candidate => !task.assignees.some(assignee => assignee.id === candidate.id));
     return <div className="mt-3 flex flex-wrap items-center gap-2">
       <label className="sr-only" htmlFor={`assign-${task.id}`}>Asignar a</label>
@@ -273,7 +280,7 @@ export function TaskBoard({ account }: { account: { id: string; role: Role } }) 
         {task.assignees.map(assignee => <li key={assignee.id}
           className={`rounded-full px-2 py-0.5 text-xs ${assignee.confirmed ? "bg-emerald-100 text-emerald-900" : "bg-slate-100 text-slate-700"}`}>
           {assignee.name}{assignee.confirmed ? " ✓" : ""}
-          {operator && task.status !== "FINALIZADO" && <button className="ml-1 font-bold" aria-label={`Quitar a ${assignee.name}`}
+          {operator && OPEN.includes(task.status) && <button className="ml-1 font-bold" aria-label={`Quitar a ${assignee.name}`}
             disabled={busy === task.id}
             onClick={() => act(`/api/tasks/${task.id}/assignments/${assignee.id}`, {}, task.id, "DELETE")}>×</button>}
         </li>)}

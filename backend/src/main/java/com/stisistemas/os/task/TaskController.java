@@ -180,11 +180,12 @@ public class TaskController {
         var task = tasks.require(id, account);
         if (!OPEN.contains(task.status())) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         if (!mayAttach(account, task)) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        if (task.photoCount() >= MAX_PHOTOS) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        // Distinct statuses so the interface can say what is actually wrong instead of a generic rejection.
+        if (task.photoCount() >= MAX_PHOTOS) throw new ResponseStatusException(HttpStatus.CONFLICT);
         byte[] bytes = read(file);
-        if (bytes.length == 0 || bytes.length > Uploads.MAX_PHOTO_BYTES) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        if (bytes.length > Uploads.MAX_PHOTO_BYTES) throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE);
         String contentType = Uploads.imageType(bytes);
-        if (contentType == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        if (contentType == null) throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
         UUID photo = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO sti.task_photo (id, task_id, storage_name, content_type, byte_size, uploaded_by)

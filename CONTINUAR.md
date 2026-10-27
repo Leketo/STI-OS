@@ -24,6 +24,7 @@ Traps that already cost time, all confirmed on this machine:
 - **Stop the local backend before packaging.** Windows locks the running JAR and the Maven rename fails.
 - `STI_API_ORIGIN` must be set **at build time** for the production bundle, not only at runtime: `next.config.ts` resolves it inside `rewrites()`, which Next evaluates during the build. Without it the bundle ships zero `/api` rewrites.
 - `backend/scripts/test-local.ps1` builds its own throwaway PostgreSQL cluster. It never touches the persistent dev database or the VPS.
+- **Stop the standalone frontend before `npm run build`.** A `node server.js` running from `.next/standalone` locks that directory and the build dies with `EBUSY: rmdir`, after having already emptied it. Same class of trap as the JAR lock.
 - Launching that script as a hidden background process with redirected output **sometimes dies before Maven runs**, leaving no output and its synthetic cluster still listening. It happened twice on 2026-10-26, to two different agents, and re-running it worked each time. It is a launcher flake, not a backend failure: do not diagnose the backend over it. Check for a leftover `output/backend-test-*` cluster with `pg_ctl status` and stop it before retrying.
 - Docker daemon is unavailable; PostgreSQL 15 is the local version and 18 is the VPS one.
 
@@ -102,6 +103,19 @@ Verified: **19/19** integration tests on isolated PostgreSQL 15.3; frontend type
 Not verified: the React board, the signature pad and the upload control in a real browser. That check is still pending from the previous session.
 
 One test changed meaning rather than breaking: a USUARIO asking for `FACTURADO` now gets 403 instead of 400, because the role can never invoice and the permission is evaluated before the transition's validity.
+
+## Independent test pass and its two fixes, 2026-10-26
+
+A second agent tested commit `5592d96` without touching code: 19/19 on the first run, and a real browser pass over creation, photos, states, **denied geolocation**, mouse-drawn signature, reopening, a second signature, `FACTURADO`, the CLIENTE view with a remote signature, and the board at 390 px with no horizontal overflow. Its report is at `output/informe-pruebas-2026-10-26.md`, which Git ignores.
+
+It found two things and both were fixed:
+
+- A `.txt` renamed to `.jpg` was rejected, but with the generic "Revisá los datos ingresados". Photo rejections now answer with distinct statuses — 415 not an image, 413 too large, 409 already five, 400 task closed — and the board names the real problem. A `MaxUploadSizeExceededException` handler was added, without which an oversized upload surfaced as a server error instead of 413.
+- Assignment controls stayed visible on a `FACTURADO` task. The backend already refused the write; the interface now hides them whenever the task is not `POR_HACER` or `EN_PROCESO`, matching the rule.
+
+Re-verified after the fixes: 19/19, typecheck and ESLint clean, production build, and a run through the proxy confirming 415, 413, 409 and 400 each on its own path.
+
+What that pass did **not** cover, stated by the tester: a forced sixth photo straight to the server, which is now covered by the test above; a physical device or real GPS fix; PostgreSQL 18; the VPS.
 
 ## Verification details
 

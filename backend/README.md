@@ -78,6 +78,8 @@ Migration `V3__signatures_photos.sql` adds `task_photo` and `task_signature`. En
 
 Photos: at most five per task, JPEG or PNG, 10 MB each. The declared content type is **not** trusted — the file is accepted only if its own first bytes are a JPEG or PNG signature. Assignees, ADMIN, SUPERVISOR and the company's CLIENTE may upload while the task is open; a closed task takes no more photos.
 
+Each rejection answers with its own status so the interface can name the real problem instead of one generic message: **415** when the bytes are not an image whatever the file is called, **413** over 10 MB, **409** when five photos already exist, **400** when the task is closed, **403** for a role that cannot attach. The 413 needs the `MaxUploadSizeExceededException` handler in `ApiErrors`; without it the container's own limit surfaces as a server error.
+
 Signature: only on a `FINALIZADO` task. Face to face, an operator or assignee presents the task on its own device and the signer types a name and draws without logging in there; remotely, the company's CLIENTE signs from its own account, which is recorded as `remote`. Either way the signature stores the session account, the instant, the signer's name, the chosen date, the stroke as PNG and the device location under the same coordinates-or-reason rule. A partial unique index guarantees at most **one signature in force** per task, so a second attempt returns 409. Reopening a task supersedes its signature and keeps it as evidence.
 
 `FINALIZADO → FACTURADO` is ADMIN only and requires a signature in force. `FACTURADO` is terminal: nothing moves out of it, and USUARIO and CLIENTE never see it.

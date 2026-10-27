@@ -341,7 +341,7 @@ class FoundationTest {
         var supervisor = new Browser(); supervisor.login("supervisor");
         String task = JsonPath.read(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Con fotos", HERE), supervisor.csrf()).body(), "$.id");
 
-        assertThat(supervisor.postFile("/api/tasks/" + task + "/photos", "no soy una imagen".getBytes(), "x.jpg", supervisor.csrf()).statusCode()).isEqualTo(400);
+        assertThat(supervisor.postFile("/api/tasks/" + task + "/photos", "no soy una imagen".getBytes(), "x.jpg", supervisor.csrf()).statusCode()).isEqualTo(415);
         assertThat(supervisor.postFile("/api/tasks/" + task + "/photos", JPEG, "foto.jpg", null).statusCode()).isEqualTo(403);
         var stored = supervisor.postFile("/api/tasks/" + task + "/photos", JPEG, "foto.jpg", supervisor.csrf());
         assertThat(stored.statusCode()).isEqualTo(201);
@@ -362,7 +362,8 @@ class FoundationTest {
             assertThat(supervisor.postFile("/api/tasks/" + task + "/photos", JPEG, "foto.jpg", supervisor.csrf()).statusCode()).isEqualTo(201);
         }
         assertThat(supervisor.get("/api/tasks/" + task).body()).contains("\"photoCount\":5");
-        assertThat(supervisor.postFile("/api/tasks/" + task + "/photos", JPEG, "sexta.jpg", supervisor.csrf()).statusCode()).isEqualTo(400);
+        assertThat(supervisor.postFile("/api/tasks/" + task + "/photos", JPEG, "sexta.jpg", supervisor.csrf()).statusCode()).isEqualTo(409);
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"ANULADA\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(403);
     }
 
     /** A task carried to FINALIZADO by its single assignee, ready to be signed. */
