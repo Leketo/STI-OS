@@ -56,7 +56,7 @@ export default function LoginPage() {
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
           <button type="submit" disabled={busy} className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-60">{busy ? "Ingresando…" : "Ingresar"}</button>
         </form>
-        <Link href="/" className="mt-6 block text-center text-sm text-blue-700 hover:underline">Ver la demostración pública</Link>
+        <Link href="/demo" className="mt-6 block text-center text-sm text-blue-700 hover:underline">Ver la demostración pública</Link>
       </div>
     </main>
   );

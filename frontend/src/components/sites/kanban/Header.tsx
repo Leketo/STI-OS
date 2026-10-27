@@ -57,7 +57,7 @@ export function Header() {
         <nav aria-label="breadcrumb" className="flex items-center text-sm">
           <ol className="flex items-center gap-1.5 text-muted-foreground">
             <li>
-              <Link href="/" className="hover:text-foreground transition-colors font-semibold text-foreground">
+              <Link href="/demo" className="hover:text-foreground transition-colors font-semibold text-foreground">
                 STI-OS
               </Link>
             </li>

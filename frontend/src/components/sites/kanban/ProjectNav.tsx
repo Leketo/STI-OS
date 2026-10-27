@@ -32,7 +32,7 @@ export function ProjectNav({ projectId }: ProjectNavProps) {
       {/* Top project banner */}
       <div className="flex items-center gap-3 mb-4">
         <Link
-          href="/"
+          href="/demo"
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="size-3.5" />
