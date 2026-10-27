@@ -144,7 +144,7 @@ Verified from this desktop, driving Chrome against the **real VPS deployment** t
 
 Not re-done here, because the same code was already browser-verified locally on 26/10: the remote signature by a CLIENTE, and the 390 px layout. The window resize did not take effect in this session and was not worth fighting.
 
-One usability observation, not a defect: **every action waits up to ten seconds** while the browser tries for a location fix before sending. With permission granted it is instant, but a technician who denies it, or who is somewhere without a fix, sees "Guardando…" on every step. That is the direct cost of the rule, and it can be cut to three or four seconds without changing the rule.
+That run surfaced a usability cost, not a defect: **every action waited up to ten seconds** while the browser tried for a location fix before sending, so a technician who denies the permission, or who is somewhere without a fix, saw "Guardando…" on every step. The wait is now **two seconds**, and a position cached within the last minute is accepted so a device that already has a fix answers instantly. A person does not move far in a minute, and the alternative was waiting out the timeout for nothing. The rule itself is unchanged: coordinates when available, an explicit reason when not.
 
 ## The whole cycle ran on the VPS, 2026-10-27
 
