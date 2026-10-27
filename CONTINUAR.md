@@ -144,7 +144,11 @@ Verified from this desktop, driving Chrome against the **real VPS deployment** t
 
 Not re-done here, because the same code was already browser-verified locally on 26/10: the remote signature by a CLIENTE, and the 390 px layout. The window resize did not take effect in this session and was not worth fighting.
 
-That run surfaced a usability cost, not a defect: **every action waited up to ten seconds** while the browser tried for a location fix before sending, so a technician who denies the permission, or who is somewhere without a fix, saw "Guardando…" on every step. The wait is now **two seconds**, and a position cached within the last minute is accepted so a device that already has a fix answers instantly. A person does not move far in a minute, and the alternative was waiting out the timeout for nothing. The rule itself is unchanged: coordinates when available, an explicit reason when not.
+That run surfaced a usability cost, not a defect: **every action waits up to ten seconds** while the browser tries for a location fix before the request is sent, so a technician who denies the permission, or who is somewhere without a fix, sees "Guardando…" on every step. The server was never the slow part.
+
+The ceiling was briefly cut to two seconds and then **put back to ten on purpose**: a cold GPS rarely answers faster, and shortening it would have filled the log with "sin ubicación" for technicians who did grant the permission — the opposite of what the traceability rule is for. What was kept is accepting a **position cached within the last minute**, so a device that already has a fix answers instantly instead of waiting out a timeout for nothing; a person does not move far in a minute. The rule itself never changed: coordinates when available, an explicit reason when not.
+
+Worth measuring in the field rather than guessing: how many actions end up without coordinates on a real phone. That number, not an argument, is what should decide the timeout.
 
 ## The whole cycle ran on the VPS, 2026-10-27
 

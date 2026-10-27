@@ -46,9 +46,10 @@ export type DeviceLocation = { latitude: number; longitude: number; accuracyM: n
  * GPS is required at every step, but a device that cannot obtain a fix records the reason instead of
  * blocking the work. The reason is kept short because the backend stores at most 200 characters.
  *
- * The two seconds are a deliberate ceiling on how long a technician waits before the action is sent.
- * A minute of cached position is accepted so a device that already has a fix answers instantly: a
- * person does not move far in a minute, and the alternative is waiting out the timeout for nothing.
+ * Ten seconds is the ceiling on waiting for a fix, chosen because a cold GPS rarely answers faster
+ * and the traceability is worth the wait. A minute of cached position is accepted so a device that
+ * already has a fix answers instantly: a person does not move far in a minute, and the alternative
+ * is waiting out the timeout for nothing.
  */
 export function deviceLocation(): Promise<DeviceLocation> {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -62,7 +63,7 @@ export function deviceLocation(): Promise<DeviceLocation> {
         accuracyM: position.coords.accuracy,
       }),
       error => resolve({ absentReason: `Sin ubicación del dispositivo: ${error.message}`.slice(0, 200) }),
-      { enableHighAccuracy: true, timeout: 2000, maximumAge: 60000 },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
     );
   });
 }
