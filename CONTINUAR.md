@@ -28,7 +28,7 @@ Traps that already cost time, all confirmed on this machine:
 - Launching that script as a hidden background process with redirected output **sometimes dies before Maven runs**, leaving no output and its synthetic cluster still listening. It happened twice on 2026-10-26, to two different agents, and re-running it worked each time. It is a launcher flake, not a backend failure: do not diagnose the backend over it. Check for a leftover `output/backend-test-*` cluster with `pg_ctl status` and stop it before retrying.
 - Docker daemon is unavailable; PostgreSQL 15 is the local version and 18 is the VPS one.
 
-Current state of the work: authentication, accounts, clients, projects, the full task domain, client signature, photos and invoicing are implemented and verified locally. The functional cycle the client described is closed end to end. Not verified anywhere: PostgreSQL 18 and the VPS. The server agent's pending work is written in `server/mensaje-codex-verificar-pg18.md` and has not been handed over yet.
+Current state of the work: authentication, accounts, clients, projects, the full task domain, client signature, photos and invoicing are implemented and verified locally, and the suite also passes on the VPS against PostgreSQL 18.6. The functional cycle the client described is closed end to end. Still unverified: the deployed service, HTTPS, Nginx rate limiting and backup consistency between the database and the uploads directory. The server agent's pending work is written in `server/mensaje-codex-verificar-pg18.md` and has not been handed over yet.
 
 ## Preserve
 
@@ -116,6 +116,19 @@ It found two things and both were fixed:
 Re-verified after the fixes: 19/19, typecheck and ESLint clean, production build, and a run through the proxy confirming 415, 413, 409 and 400 each on its own path.
 
 What that pass did **not** cover, stated by the tester: a forced sixth photo straight to the server, which is now covered by the test above; a physical device or real GPS fix; PostgreSQL 18; the VPS.
+
+## PostgreSQL 18 parity: verified on the server, 2026-10-27
+
+**The suite passed 19/19 on the VPS against PostgreSQL 18.6** (`Ubuntu 18.6-0ubuntu0.26.04.1`, x86_64), with `BUILD SUCCESS` and the three JARs built there. No behaviour differed from PostgreSQL 15: not in Flyway, not in the runtime privileges, not in the Spring Session tables. The long-standing "results on 15 do not prove parity with 18" caveat is now closed.
+
+How it ran, and what that establishes:
+
+- The repository was cloned on the server through a **read-only deploy key** on the `ubuntu` account, after the earlier session proved the VPS had no GitHub credentials at all.
+- `./mvnw` built it with **no system Maven**: the wrapper downloaded Maven 3.9.3 into the user's `~/.m2` and installed nothing. Adding the wrapper paid for itself the first time it was used.
+- The database was a throwaway `sti_os_test` with its own roles, never `sti_os`.
+- `pg_hba` did **not** block the test roles. An earlier attempt failed with `28P01`, which looked like a configuration wall but was only a pre-existing `test_migrator` role left by the previous session carrying a different password. Worth remembering: `28P01` means the connection was accepted and the password was wrong; a real `pg_hba` block says so by name.
+
+What this does **not** establish: the deployed service, HTTPS and Secure cookies, the credential delivery under systemd at runtime, Nginx rate limiting, or backup consistency between the database and the uploads directory.
 
 ## VPS first pass, 2026-10-27: blocked on repository access
 

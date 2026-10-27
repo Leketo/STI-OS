@@ -48,7 +48,7 @@ The script creates a new cluster in a unique, ACL-restricted `output/backend-tes
 
 Tests fail explicitly if database variables are missing; they are not silently skipped. Tests use actual HTTP, cookies, CSRF and PostgreSQL, including JDBC-persisted sessions. Runtime DDL is denied. Test fixtures use reserved `example.invalid` addresses and random passwords, and exist only under `src/test`. The script requires Windows PowerShell/PowerShell on Windows and `icacls`.
 
-The initial local PostgreSQL available is **15**. Results on it do not prove parity with the VPS PostgreSQL **18**. Run the same suite with PostgreSQL 18 before the first deployment.
+The local PostgreSQL is **15**. Parity with the VPS **PostgreSQL 18.6** was confirmed on 2026-10-27 by running this same suite on the server itself: **19 tests, 0 failures/errors/skips**, `BUILD SUCCESS`, three JARs built there with `./mvnw` and JDK 21, against a throwaway `sti_os_test` database that was dropped afterwards. No behaviour differed from 15 in Flyway, runtime privileges or the Spring Session tables.
 
 Verified on 2026-10-26: JDK 21.0.9, Maven 3.9.3, PostgreSQL 15.3, `mvn verify` through the script: **12 tests, 0 failures/errors/skips**, all three JARs packaged, synthetic cluster confirmed stopped. The bootstrap recovery branch compiled but has no dedicated integration test. The separate persistent local cluster was created on `127.0.0.1:55432`, migrated to V1 and given a generated ADMIN password. Direct backend and isolated frontend proxy checks confirmed login 204, `/api/auth/me` ADMIN, `/app` 200 while authenticated, logout 204, unauthenticated `/app` 307, public mock board 200 and frontend `/api/health` 404. The OpenAPI YAML parsed with 9 paths. These are local results, not deployed JAR/HTTPS evidence. The JVM emitted the test dependency Mockito dynamic-agent warning; it did not fail verification.
 
@@ -125,7 +125,7 @@ CLIENTE receives only its own company's directory and projects. An unknown or fo
 
 ## Release gates still pending
 
-- Fresh security/reliability review and PostgreSQL 18 verification. Everything below was tested only on PostgreSQL 15.
+- Fresh security/reliability review. PostgreSQL 18 parity is **done**, verified on the server on 2026-10-27.
 - Login rate limiting at Nginx before public authentication; local login and proxy do not change the published demo.
 - Browser verification of the authenticated task board, the signature pad and photo upload. Their API behaviour was verified over HTTP; the React UI itself has not been exercised in a real browser.
 - A private uploads path on the server, its backup coverage and the DB/uploads consistency question the VPS report already raised. Photos and signatures are files now, not rows.
