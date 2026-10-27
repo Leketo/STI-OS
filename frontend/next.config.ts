@@ -2,6 +2,8 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // Nothing gains from announcing the framework to every visitor.
+  poweredByHeader: false,
   async rewrites() {
     const backend = process.env.STI_API_ORIGIN;
     if (!backend) return [];
