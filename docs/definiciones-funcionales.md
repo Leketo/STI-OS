@@ -4,7 +4,7 @@ Actualizado: 24/10/2026. Este documento registra las decisiones expresas del cli
 
 ## Producto y estructura
 
-- STI-OS será una aplicación web utilizable en teléfono y escritorio, con interfaces adaptadas a cada tamaño de pantalla.
+- STI-OS será una aplicación web utilizable en teléfono y escritorio, con interfaces adaptadas a cada tamaño de pantalla. **Confirmado el 27/10/2026:** el estilo visual a usar es el de la demostración que quedó en `/demo` —su CSS y sus componentes—, que es el que se diseñó para este producto. La pantalla autenticada se construyó sin ese estilo para resolver primero el dominio; unificarla es una rodaja pendiente. La usabilidad en teléfono no es un adorno: los técnicos la usan parados en una obra.
 - Gestionará tareas de instalación y servicio que hoy STI registra manualmente: cámaras, cableado, montaje, sonido y otros trabajos.
 - La jerarquía obligatoria es **cliente → proyecto → tarea**: toda tarea debe pertenecer a un proyecto, que debe existir antes de crearla. Para el cliente Sallustro, Hering y Casa Central son proyectos. Un proyecto también puede representar una obra u otro tipo de trabajo. La posible distinción futura entre proyecto y sucursal queda pendiente de análisis; no se modela una entidad sucursal por ahora.
 - Solo ADMIN puede crear proyectos. USUARIO, SUPERVISOR y CLIENTE crean tareas únicamente en proyectos ya existentes. Implementado el 26/10/2026 como `POST /api/projects`, restringido a ADMIN.

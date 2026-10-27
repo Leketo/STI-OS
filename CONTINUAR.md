@@ -45,6 +45,27 @@ DNS, estás en una sesión sandboxeada y no sirve para este trabajo. Pará ahí 
 decilo, sin buscar rodeos.
 ```
 
+### Next slices, decided but not started
+
+**1. The interface should look like the demo.** That was the intent from the beginning and it drifted: the demo at `/demo` carries the visual language that was designed for this product — its CSS, its components, its board — while the authenticated `/app` was built plain, to get the domain working. The demo is still deployed precisely so its design can be reused rather than rebuilt. The pieces live in `frontend/src/components/sites/kanban/` and `frontend/src/app/globals.css`.
+
+The binding requirement is not decoration: **it has to be usable on a phone and on a desktop.** Technicians use it standing on a site, with one hand, on mobile data. The current `/app` survives a 390 px viewport without horizontal overflow, which is the floor, not the goal.
+
+**2. A usage trail, to learn what people actually do.** Which screens get visited, in what order, what happens around each action. The owner wants this as the **source of truth for decisions about style and usability**, instead of guessing.
+
+What already exists and should not be duplicated: `sti.task_event` records every domain action with actor, instant and device location. What is missing is **navigation and interface behaviour** — the screens visited, the dead ends, the forms abandoned halfway.
+
+Open questions to settle before building it, in rough order of weight:
+
+- **Database table or file on disk.** A table rides along with the existing backup and is queryable with the same tools; a file is cheaper to write and easier to rotate, but the VPS backup is local-only, so a file has to be added to it deliberately or it is lost with the machine.
+- **Volume and retention.** Navigation events are far more frequent than domain events. Decide how long they are kept before the question becomes a disk problem.
+- **What is recorded per event**, and whether it ever contains data a client would consider theirs.
+- **This records what employees do.** It is their own staff, but a trail of each person's activity is monitoring, and monitoring is better disclosed than discovered. Worth a line in whatever the technicians are told about the system.
+
+### Waiting on the real users
+
+The immediate next input is not code: it is the first real client using the system and saying what actually gets in the way. That feedback, plus the usage trail above, is what should drive the next slice — not a list written in advance.
+
 ### Rollback, tested and ready
 
 ```bash
