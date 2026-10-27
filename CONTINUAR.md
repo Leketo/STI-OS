@@ -20,7 +20,7 @@ Left running at the end of the session: PostgreSQL on `127.0.0.1:55432`, backend
 
 Traps that already cost time, all confirmed on this machine:
 
-- Build with **JDK 21 explicitly**; Maven picks 17 by default here.
+- Build with **JDK 21 explicitly**; Maven picks 17 by default here. The repository now carries the Maven wrapper, so `./mvnw` works without a system Maven; the server is meant to use it.
 - **Stop the local backend before packaging.** Windows locks the running JAR and the Maven rename fails.
 - `STI_API_ORIGIN` must be set **at build time** for the production bundle, not only at runtime: `next.config.ts` resolves it inside `rewrites()`, which Next evaluates during the build. Without it the bundle ships zero `/api` rewrites.
 - `backend/scripts/test-local.ps1` builds its own throwaway PostgreSQL cluster. It never touches the persistent dev database or the VPS.

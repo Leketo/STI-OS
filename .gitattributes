@@ -1,0 +1,4 @@
+# The Maven wrapper runs under /bin/sh on the Linux server. Checked out with CRLF it
+# fails with "bad interpreter", so it must stay LF whatever the local git is configured to do.
+backend/mvnw text eol=lf
+*.sh text eol=lf

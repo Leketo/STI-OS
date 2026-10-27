@@ -34,7 +34,7 @@ If a partial setup fails before `output/backend-local/provisioned` exists, inspe
 
 ## Local verification
 
-Prerequisites: JDK 21, Maven 3.9+, PostgreSQL binaries. On this workstation Maven selects Java 17 by default, so select Java 21 per process; do not change the machine-wide configuration. Docker is installed but its daemon was unavailable during initial preparation.
+Prerequisites: JDK 21 and PostgreSQL binaries. Maven does not need to be installed: the repository carries the wrapper, so `./mvnw` (or `mvnw.cmd`) downloads Maven 3.9.3 into the user's `~/.m2` on first use and installs nothing system-wide. That is what the server should use. `backend/mvnw` is committed with the executable bit and is pinned to LF in `.gitattributes`, because checked out with CRLF it fails on Linux with "bad interpreter". On this workstation Maven selects Java 17 by default, so select Java 21 per process; do not change the machine-wide configuration. Docker is installed but its daemon was unavailable during initial preparation.
 
 From the repository root in PowerShell:
 
