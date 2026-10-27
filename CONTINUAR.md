@@ -4,7 +4,11 @@ Updated: 2026-10-26. This file describes the desktop repository, not the separat
 
 ## Start here, next session
 
-Everything is pushed to `origin/main`; the task domain is commit `4393228`. Check `git log -1` for the current head instead of trusting a hash written here. Nothing is deployed; the VPS still serves the old demo.
+Everything is pushed to `origin/main`. Check `git log -1` for the current head instead of trusting a hash written here.
+
+**The application is live at `https://app.stisistemas.com`**, published on 2026-10-27 and holding no accounts or data yet. The demo it replaced was the commit `bef587fbebcf921d39eb5ec2b2572606ec418c7a`.
+
+One loose end from that deployment: the frontend was built from `6a4b03f`, which carried a **two-second** location timeout. That was reverted to ten seconds in `ceddabe` right after, so **the deployed bundle is one commit behind on that single value**. Redeploy the frontend or decide to keep two seconds; do not leave it unexamined.
 
 **The browser verification is done.** It ran on 2026-10-27 against the real VPS deployment through an SSH tunnel, covering the location-denied rule, a mouse-drawn signature, reopening, photo upload and the CLIENTE view. See the section below. What remains is the public cutover, which is operational work on the server, not application work.
 
@@ -129,6 +133,25 @@ How it ran, and what that establishes:
 - `pg_hba` did **not** block the test roles. An earlier attempt failed with `28P01`, which looked like a configuration wall but was only a pre-existing `test_migrator` role left by the previous session carrying a different password. Worth remembering: `28P01` means the connection was accepted and the password was wrong; a real `pg_hba` block says so by name.
 
 What this does **not** establish: the deployed service, HTTPS and Secure cookies, the credential delivery under systemd at runtime, Nginx rate limiting, or backup consistency between the database and the uploads directory.
+
+## The application is public, 2026-10-27
+
+The server session replaced the enabled Nginx site in one move, with `nginx -t` before reloading, a backup kept, and a rollback script tested beforehand at `/srv/sti-os/private/docs/20261027T040332Z/rollback-nginx.sh`. Its report is in that same directory. Backend and frontend are `active/enabled` and listen only on loopback behind Nginx; the `db-runtime` residue was retired; the preview unit was stopped; and the database and uploads hold no synthetic data.
+
+**Verified independently from this desktop, which is a host outside the VPS** — the measurement the server session could not make from inside:
+
+- `/` and `/login` answer 200, `/app` answers 307 without a session.
+- **`/api/health` answers 404 from outside.** The internal readiness endpoint is not published.
+- `/api/auth/csrf` answers 200 and sets `STI_SESSION=…; Path=/; Secure; HttpOnly; SameSite=Lax`. That cookie, observed over real HTTPS from another machine, is the proof that the service is **not** running the `local` profile, whose only effect is to drop the `Secure` flag.
+
+The server session additionally reported login/session/logout at 204/200/204 over HTTPS and the login rate limit returning 429 on a burst and recovering after 21 seconds.
+
+**There is no real ADMIN yet**: zero accounts, tasks, photos and signatures. The system is published and empty, which is the right state. The first administrator is created with the bootstrap JAR when the owner decides.
+
+Two hardening gaps found in the public response headers, neither a blocker, both server-side:
+
+- **No `Strict-Transport-Security`.** A site that authenticates over HTTPS should pin clients to HTTPS.
+- `X-Powered-By: Next.js` announces the stack, and the page responses carry no `X-Content-Type-Options` or `X-Frame-Options`. Spring Security sets its own on `/api`, but the pages come from Next through Nginx.
 
 ## Browser verification, done at last, 2026-10-27
 
