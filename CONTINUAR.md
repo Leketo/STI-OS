@@ -20,6 +20,8 @@ Verified from this desktop, which is a host outside the VPS, after the final dep
 | `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` | present, including error responses |
 | `X-Powered-By` | gone |
 
+The root no longer serves the fictitious dashboard. Deployed on 2026-10-27 from `bab6a1c` and verified from outside: `/` answers **307 to `/login`** with `Cache-Control: no-store, must-revalidate, no-cache, max-age=0, private`, and following the redirect lands on the real login screen with no trace of the demo. `/demo` still serves the demonstration at 200. The cache header mattered: the root used to be static with `s-maxage=31536000`, and a cached copy would have hidden the redirect no matter how correct the deployment was. Rollback for that deployment: `sudo /srv/sti-os/private/docs/20261027T132246Z-frontend-bab6a1c/rollback-frontend.sh`.
+
 ### What to do next, in this order
 
 1. **Raise HSTS to a year.** It sits at `max-age=300` on purpose: HSTS is remembered by browsers, so a year-long value plus a certificate problem locks clients out with no way to reach them. It was left short until the deployment proved stable. It now has; raise it to `31536000`, still without `includeSubDomains` and without `preload`.
