@@ -1,20 +1,48 @@
-# STI-OS frontend preview
+# STI-OS frontend
 
-This is a **read-only client demonstration** of STI-OS. The visible projects, service orders, people, activity, and counts are mock examples. There is no login, live API, database connection, order persistence, signature capture, time tracking, or geolocation. Browsing, filtering, and changing the light/dark theme only affect the current page session. The preview cannot create, edit, move, or invoice orders.
+El frontend tiene dos superficies independientes:
 
-The dashboard and project views show only the client-facing example stages: draft, to do, in progress, and awaiting signature. Billed and cancelled stages are excluded. Each project board and list show only records mapped to that project; projects without examples show an empty view. Unknown project IDs return 404. These display filters are **not access control**; a future backend must enforce authorization.
+- **`/app`**: aplicación autenticada. Kanban real, tareas, asignaciones, confirmaciones, fotos, firma y administración mediante las operaciones existentes del backend.
+- **`/demo` y `/projects/...`**: demostración pública de solo lectura con datos ficticios. No es una fuente de datos para `/app`.
 
-The current UI is a visual prototype. It does not demonstrate a deployed service, client workflow, or integration with Libertya or SIFEN. Some secondary sections are placeholders with static sample content.
+La aplicación autenticada incluye navegación por Tareas, Clientes, Proyectos y Usuarios (ADMIN), vistas Tablero/Lista, filtros, paneles de creación y detalle, y temas Día/Noche/Sistema guardados en el navegador. El backend sigue autorizando cada operación. Las limitaciones y reglas de transición se documentan en [el rediseño](../docs/frontend-redesign.md).
 
-## Run locally
+## Desarrollo con el backend existente
 
-Use Node.js 24, then:
+Node.js 24:
 
 ```sh
 npm ci
-npm run dev
+STI_API_ORIGIN=http://127.0.0.1:8080 npm run dev
 ```
 
-Validation: `npm run typecheck` and `npm run lint`. The available build script uses Webpack and prepares standalone static assets.
+`STI_API_ORIGIN` must apuntar al listener HTTP local del backend. No apuntar a un backend de producción para probar escrituras. Los endpoints conservan CSRF, sesión same-origin y los datos de ubicación ya previstos por la aplicación.
 
-Selected UI components and the Vercel theme were adapted from [Kiranism/next-shadcn-dashboard-starter](https://github.com/Kiranism/next-shadcn-dashboard-starter), commit `9084ffd954d24591d9b1d279c4b18e119b02b34e`. The upstream MIT license is included in [LICENSE](LICENSE).
+## Comprobaciones
+
+```sh
+npm run lint
+npm run typecheck
+npm run test:ui
+npm run build
+```
+
+El build usa Webpack y prepara el bundle standalone con sus archivos estáticos. Los tests de contraste revisan los tokens de ambos temas; no reemplazan una auditoría de accesibilidad del DOM renderizado.
+
+## Revisión visual sin datos reales
+
+`node scripts/ui-fixture-server.mjs` inicia un **doble de API de desarrollo**, exclusivamente en `127.0.0.1:4187`, con datos ficticios en memoria. Se usa únicamente para revisar el frontend. No tiene base de datos, no utiliza credenciales de producción y no debe desplegarse como backend.
+
+En otra terminal:
+
+```sh
+STI_API_ORIGIN=http://127.0.0.1:4187 npm run dev
+```
+
+En ese frontend local, abrir `/api/auth/csrf` inicia la sesión ficticia del doble; luego abrir `/app`. Las creaciones y cambios se pierden al detener el doble. `/api/tasks?fixtureFail=1` prepara un rechazo de la siguiente escritura, exclusivamente en ese proceso ficticio, para revisar los errores y la vuelta de una tarjeta a su estado anterior.
+
+La revisión con este doble no demuestra una integración end-to-end con el backend real. Fotos y firma deben verificarse también con el backend en un entorno de pruebas.
+
+## Atribución
+
+Componentes de la demo y el tema Vercel se adaptaron de [Kiranism/next-shadcn-dashboard-starter](https://github.com/Kiranism/next-shadcn-dashboard-starter), commit `9084ffd954d24591d9b1d279c4b18e119b02b34e`. Licencia MIT en [LICENSE](LICENSE).
