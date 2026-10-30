@@ -12,6 +12,8 @@ import { Moon, Sun, X } from "lucide-react";
 
 type Theme = "light" | "dark" | "system";
 const themeEvent = "sti-theme-change";
+let openPanels = 0;
+let originalOverflow = "";
 function subscribe(callback: () => void) {
   const media = window.matchMedia("(prefers-color-scheme: dark)");
   window.addEventListener("storage", callback);
@@ -85,7 +87,7 @@ export function ThemeControl() {
   );
 }
 
-/** Native modal supplies focus containment, background inertness and focus restoration. */
+/** Native modal supplies focus containment; cleanup explicitly restores focus after unmount. */
 export function Panel({
   title,
   eyebrow,
@@ -93,6 +95,7 @@ export function Panel({
   onClose,
   busy = false,
   wide = false,
+  returnFocusId,
 }: {
   title: string;
   eyebrow?: string;
@@ -100,21 +103,39 @@ export function Panel({
   onClose: () => void;
   busy?: boolean;
   wide?: boolean;
+  returnFocusId?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
   const id = useId();
   useEffect(() => {
     const element = dialog.current;
     if (!element) return;
+    if (!opener.current)
+      opener.current = document.activeElement as HTMLElement | null;
+    const trigger = opener.current;
     element.showModal();
     element.querySelector<HTMLElement>("[data-autofocus]")?.focus();
-    const previous = document.body.style.overflow;
+    if (openPanels === 0) originalOverflow = document.body.style.overflow;
+    openPanels += 1;
     document.body.style.overflow = "hidden";
     return () => {
       element.close();
-      document.body.style.overflow = previous;
+      openPanels -= 1;
+      if (openPanels === 0) document.body.style.overflow = originalOverflow;
+      // React can detach the dialog before effect cleanup, so native restoration is insufficient.
+      queueMicrotask(() => {
+        const target = trigger?.isConnected
+          ? trigger
+          : ((returnFocusId ? document.getElementById(returnFocusId) : null) ??
+            document.querySelector<HTMLElement>(
+              "dialog[open] button:not(:disabled)",
+            ) ??
+            document.getElementById("workspace-content"));
+        target?.focus({ preventScroll: true });
+      });
     };
-  }, []);
+  }, [returnFocusId]);
   return (
     <dialog
       ref={dialog}

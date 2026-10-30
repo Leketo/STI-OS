@@ -55,3 +55,18 @@ No mezclar datos de la demo con `/app`. No añadir prioridades, vencimientos o e
 - Revisión en navegador con el servidor de prueba aislado descrito en el README. Este servidor no sustituye al backend ni valida su integración real.
 
 Antes de integrar a producción: revisar ambos temas, recorridos con los roles reales, fotos y firma, red lenta/rechazos, móvil táctil, retorno de foco y la conexión contra el backend en un entorno de pruebas.
+
+## Ajustes tras la revisión de usabilidad
+
+Se conserva `revision-frontend-kanban.md` como registro de la revisión inicial. Esta actualización aborda sus hallazgos 2–9:
+
+- Los paneles capturan el disparador y restauran el foco explícitamente al desmontarse, con alternativa por identificador para tarjetas que se vuelven a renderizar. El bloqueo de desplazamiento admite paneles superpuestos.
+- La columna móvil inicial es la primera con tareas dentro de los filtros actuales. Una elección explícita sigue siendo válida aunque esa columna esté vacía. Dos pruebas cubren estos casos y los estados disponibles por rol.
+- Escala de 12 px para metadatos, 14 px para texto operativo y 16 px para títulos de tarjeta en escritorio; encabezado principal entre 24 y 28 px. Navegación y acciones principales crecen a 14 px.
+- Las tarjetas sin descripción omiten ese bloque. Cliente y Proyecto tienen etiquetas visibles; la Lista incorpora Cliente.
+- En móvil, los filtros se despliegan a demanda, los campos y selectores usan 16 px y los controles principales tienen un objetivo mínimo de 44 px. Los iconos y asas de arrastre tienen 44 × 44 px.
+- El distintivo de navegación dice «activas»; se elimina el total repetido de la cabecera y los filtros indican «Mostrando X de Y tareas».
+
+Validación de esta actualización: `npm run check` completo y `npm run test:ui` con 10/10 pruebas. En Chrome, sobre el bundle de producción y datos ficticios en memoria, se verificaron el cambio Día/Noche, las etiquetas del tablero, la columna Cliente de Lista, el cierre por Escape del detalle y el cierre por botón del formulario. Ambos cierres devolvieron el foco al disparador y restablecieron el desplazamiento. La tarjeta renderiza a 16 px en el escritorio probado, sin desborde horizontal de la página.
+
+Límites: los nuevos ajustes móviles se revisaron en código y en las pruebas de selección de columna; falta repetir la medición en un dispositivo táctil. Sigue abierto el hallazgo 1 sobre hidratación con `npm run dev`: usar Webpack y cambiar la inicialización del tema no demostraron una solución. Esos experimentos no se incorporan a la rama. El recorrido de producción sí hidrata y permite operar. No se modifican dependencias ni configuración de desarrollo sin una causa confirmada.

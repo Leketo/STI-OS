@@ -26,11 +26,14 @@
   --sti-danger-bg: #ffe9ed;
   --sti-shadow: 0 4px 16px #2721390a;
   --sti-radius: 16px;
+  --sti-font-xs: 12px;
+  --sti-font-sm: 14px;
+  --sti-font-md: 16px;
   --sti-font: var(--font-sans), Inter, ui-sans-serif, system-ui, sans-serif;
   background: var(--sti-bg);
   color: var(--sti-text);
   font-family: var(--sti-font);
-  font-size: 14px;
+  font-size: var(--sti-font-sm);
   line-height: 1.5;
   color-scheme: light;
 }
@@ -122,7 +125,7 @@ html.dark .sti-auth {
 }
 .sti-brand small {
   display: block;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   font-weight: 500;
   letter-spacing: 0.1px;
   color: var(--sti-muted);
@@ -162,14 +165,14 @@ html.dark .sti-auth {
   margin: 30px 0 28px;
   border: 1px solid var(--sti-border);
   border-radius: 11px;
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   font-weight: 650;
   background: var(--sti-surface);
 }
 .sti-workspace-label small {
   display: block;
   color: var(--sti-muted);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   font-weight: 400;
 }
 .sti-workspace-avatar {
@@ -180,10 +183,10 @@ html.dark .sti-auth {
   height: 30px;
   display: grid;
   place-items: center;
-  font-size: 15px;
+  font-size: var(--sti-font-md);
 }
 .sti-nav-caption {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   font-weight: 750;
   letter-spacing: 1.4px;
   margin: 0 12px 12px;
@@ -201,7 +204,7 @@ html.dark .sti-auth {
   border-radius: 9px;
   text-decoration: none;
   color: var(--sti-muted) !important;
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   font-weight: 600;
   transition:
     background 150ms,
@@ -220,7 +223,7 @@ html.dark .sti-auth {
   padding: 0 6px;
   min-width: 22px;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   border-radius: 5px;
   background: var(--sti-surface);
   color: var(--sti-text);
@@ -237,10 +240,10 @@ html.dark .sti-auth {
 .sti-sidebar-note strong {
   display: block;
   color: var(--sti-text);
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
 }
 .sti-sidebar-note p {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   line-height: 1.7;
   margin-top: 5px;
   max-width: 165px;
@@ -261,12 +264,12 @@ html.dark .sti-auth {
   min-width: 0;
 }
 .sti-profile strong {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   display: block;
   overflow-wrap: anywhere;
 }
 .sti-profile small {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   color: var(--sti-muted);
 }
 .sti-avatar {
@@ -279,7 +282,7 @@ html.dark .sti-auth {
   flex-shrink: 0;
   background: var(--sti-violet-bg);
   color: var(--sti-violet);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   font-weight: 750;
   border: 2px solid var(--sti-surface);
 }
@@ -312,7 +315,7 @@ html.dark .sti-auth {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   color: var(--sti-muted);
 }
 .sti-breadcrumb strong {
@@ -324,7 +327,7 @@ html.dark .sti-auth {
   gap: 5px;
   align-items: center;
   color: var(--sti-muted) !important;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   text-decoration: none;
 }
 .sti-demo-link:hover {
@@ -343,14 +346,14 @@ html.dark .sti-auth {
   margin-bottom: 22px;
 }
 .sti-eyebrow {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   font-weight: 750;
   color: var(--sti-muted);
   letter-spacing: 1.6px;
   margin-bottom: 7px;
 }
 .sti-page-heading h1 {
-  font-size: clamp(24px, 2.2vw, 32px);
+  font-size: clamp(24px, 2vw, 28px);
   letter-spacing: -1.15px;
   line-height: 1.2;
   font-weight: 800;
@@ -360,7 +363,7 @@ html.dark .sti-auth {
   color: var(--sti-violet);
 }
 .sti-page-heading > div > p:last-child {
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   color: var(--sti-muted);
   margin-top: 8px;
 }
@@ -370,7 +373,7 @@ html.dark .sti-auth {
   flex-shrink: 0;
 }
 .sti-button {
-  min-height: 40px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -378,7 +381,7 @@ html.dark .sti-auth {
   border: 1px solid transparent;
   border-radius: 99px;
   padding: 10px 17px;
-  font-size: 11px !important;
+  font-size: var(--sti-font-sm) !important;
   font-weight: 650 !important;
   text-decoration: none;
   transition:
@@ -436,7 +439,7 @@ html.dark .sti-auth {
   gap: 24px;
   padding-bottom: 24px;
   color: var(--sti-muted);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
 }
 .sti-board-summary > span {
   display: inline-flex;
@@ -491,7 +494,7 @@ html.dark .sti-auth {
   padding: 7px 13px;
   border-radius: 7px;
   color: var(--sti-muted);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   font-weight: 600;
 }
 .sti-view-switch button.is-active {
@@ -523,7 +526,7 @@ html.dark .sti-auth {
   border: 0;
   background: transparent;
   color: var(--sti-text);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   padding: 8px 0;
 }
 .sti-search input::placeholder {
@@ -550,7 +553,7 @@ html.dark .sti-auth {
   max-width: 200px;
   min-height: 32px;
   padding: 5px 25px 5px 9px;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   background: var(--sti-surface);
   color: var(--sti-text);
   border: 1px solid var(--sti-control-border);
@@ -562,12 +565,12 @@ html.dark .sti-auth {
   align-items: center;
   gap: 3px;
   color: var(--sti-violet);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   padding: 5px;
 }
 .sti-filter-count {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
 }
 .sti-board {
   display: grid;
@@ -600,7 +603,7 @@ html.dark .sti-auth {
   gap: 7px;
 }
 .sti-column-head h2 {
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   font-weight: 700;
 }
 .sti-column-head .sti-icon-button {
@@ -609,13 +612,13 @@ html.dark .sti-auth {
 }
 .sti-column-count {
   color: var(--sti-muted);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   border-radius: 5px;
   padding: 1px 5px;
   background: var(--sti-surface);
 }
 .sti-column-hint {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   color: var(--sti-muted);
   padding: 3px 4px 12px 18px;
 }
@@ -662,7 +665,7 @@ html.dark .sti-auth {
 }
 .sti-task-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   color: var(--sti-muted);
   white-space: nowrap;
   letter-spacing: 0.25px;
@@ -674,7 +677,7 @@ html.dark .sti-auth {
   cursor: grab;
 }
 .sti-task-card h3 {
-  font-size: 14px;
+  font-size: var(--sti-font-md);
   line-height: 1.55;
   font-weight: 650;
   margin: 0 0 7px;
@@ -694,7 +697,7 @@ html.dark .sti-auth {
 }
 .sti-task-description {
   color: var(--sti-muted);
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   line-height: 1.65;
   margin-bottom: 14px;
   display: -webkit-box;
@@ -707,7 +710,7 @@ html.dark .sti-auth {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   font-weight: 550;
   color: var(--sti-violet);
   white-space: nowrap;
@@ -722,7 +725,7 @@ html.dark .sti-auth {
   flex-shrink: 0;
 }
 .sti-task-client {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   color: var(--sti-muted);
   padding-left: 10px;
   margin-top: 2px;
@@ -744,7 +747,7 @@ html.dark .sti-auth {
   margin-left: -7px;
 }
 .sti-unassigned {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   color: var(--sti-muted);
   display: flex;
   align-items: center;
@@ -752,7 +755,7 @@ html.dark .sti-auth {
 }
 .sti-attachments {
   color: var(--sti-muted);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -762,7 +765,7 @@ html.dark .sti-auth {
   align-items: center;
   gap: 5px;
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   font-weight: 600;
   border-radius: 6px;
   color: var(--sti-muted);
@@ -806,7 +809,7 @@ html.dark .sti-auth {
   right: -23px;
   top: -5px;
   color: var(--sti-muted);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
 }
 .sti-column-empty {
   color: var(--sti-muted);
@@ -819,12 +822,12 @@ html.dark .sti-auth {
   padding: 16px;
 }
 .sti-column-empty strong {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   font-weight: 550;
   margin: 10px 0 4px;
 }
 .sti-column-empty span {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   line-height: 1.6;
   max-width: 140px;
 }
@@ -839,7 +842,7 @@ html.dark .sti-auth {
   border: 1px dashed var(--sti-control-border);
   background: transparent;
   color: var(--sti-muted);
-  font-size: 10px !important;
+  font-size: var(--sti-font-xs) !important;
   margin-top: 2px;
 }
 .sti-add-task:hover {
@@ -851,7 +854,7 @@ html.dark .sti-auth {
   align-items: center;
   gap: 5px;
   color: var(--sti-muted);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   margin-top: 10px;
 }
 .sti-footer {
@@ -860,7 +863,7 @@ html.dark .sti-auth {
   gap: 15px;
   color: var(--sti-muted);
   padding: 18px 32px;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
 }
 .sti-footer > span:first-child {
   display: flex;
@@ -885,7 +888,7 @@ html.dark .sti-auth {
   min-width: 0;
   background: var(--sti-surface);
   color: var(--sti-text);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   border: 1px solid var(--sti-control-border);
   border-radius: 7px;
   padding: 6px 8px;
@@ -896,7 +899,7 @@ html.dark .sti-auth {
   justify-content: flex-start;
   gap: 7px;
   color: var(--sti-muted);
-  font-size: 10px !important;
+  font-size: var(--sti-font-sm) !important;
   background: transparent;
   padding: 3px;
   border-radius: 5px;
@@ -910,7 +913,7 @@ html.dark .sti-auth {
   margin-bottom: 20px;
   border: 1px solid currentColor;
   padding: 10px 14px;
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   border-radius: 10px;
 }
 .sti-notice.error {
@@ -972,7 +975,7 @@ html.dark .sti-auth {
 }
 .sti-panel-intro {
   color: var(--sti-muted);
-  font-size: 13px;
+  font-size: var(--sti-font-sm);
   line-height: 1.8;
   margin-bottom: 25px;
 }
@@ -987,7 +990,7 @@ html.dark .sti-auth {
 .sti-field > label {
   display: flex;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   font-weight: 650;
 }
 .sti-field > label > span {
@@ -1009,7 +1012,7 @@ html.dark .sti-auth {
   border: 1px solid var(--sti-control-border);
   border-radius: 10px;
   color: var(--sti-text);
-  font-size: 13px;
+  font-size: var(--sti-font-sm);
 }
 .sti-field input::placeholder,
 .sti-field textarea::placeholder {
@@ -1022,7 +1025,7 @@ html.dark .sti-auth {
 }
 .sti-field p,
 .sti-form-help {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   color: var(--sti-muted);
   line-height: 1.7;
 }
@@ -1033,7 +1036,7 @@ html.dark .sti-auth {
 .sti-character-count {
   text-align: right;
   color: var(--sti-muted);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
 }
 .sti-form-actions {
   display: flex;
@@ -1045,14 +1048,14 @@ html.dark .sti-auth {
 }
 .sti-form-actions .sti-button {
   min-height: 44px;
-  font-size: 12px !important;
+  font-size: var(--sti-font-sm) !important;
 }
 .sti-inline-message {
   border-left: 3px solid var(--sti-violet);
   color: var(--sti-text);
   background: var(--sti-column);
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   line-height: 1.7;
   margin: 12px 0;
 }
@@ -1061,7 +1064,7 @@ html.dark .sti-auth {
   gap: 8px;
 }
 .sti-detail-status .sti-status {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
 }
 .sti-detail-project {
   display: flex;
@@ -1069,7 +1072,7 @@ html.dark .sti-auth {
   gap: 6px;
   flex-wrap: wrap;
   color: var(--sti-muted);
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   margin: 12px 0 26px;
 }
 .sti-detail-section {
@@ -1080,12 +1083,12 @@ html.dark .sti-auth {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 13px;
+  font-size: var(--sti-font-sm);
   font-weight: 700;
   margin-bottom: 13px;
 }
 .sti-detail-section > p {
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   line-height: 1.8;
 }
 .sti-preserve-lines {
@@ -1100,7 +1103,7 @@ html.dark .sti-auth {
 }
 .sti-section-title > span {
   color: var(--sti-muted);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
 }
 .sti-assignee-list {
   display: grid;
@@ -1111,14 +1114,14 @@ html.dark .sti-auth {
   display: flex;
   gap: 9px;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
 }
 .sti-assignee-row > span:nth-child(2) {
   flex: 1;
 }
 .sti-assignee-row small {
   display: block;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   color: var(--sti-muted);
   margin-top: 1px;
 }
@@ -1133,7 +1136,7 @@ html.dark .sti-auth {
 }
 .sti-muted {
   color: var(--sti-muted);
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
 }
 .sti-upload {
   position: relative;
@@ -1152,10 +1155,10 @@ html.dark .sti-auth {
 }
 .sti-upload strong {
   color: var(--sti-text);
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
 }
 .sti-upload span {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
 }
 .sti-upload input {
   position: absolute;
@@ -1198,17 +1201,17 @@ html.dark .sti-auth {
   gap: 2px;
 }
 .sti-timeline strong {
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   font-weight: 600;
 }
 .sti-timeline span:not(.sti-timeline-dot) {
   color: var(--sti-muted);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
 }
 .sti-timeline time,
 .sti-timeline small {
   color: var(--sti-muted);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
 }
 .sti-timeline li:last-child {
   border-color: transparent;
@@ -1231,10 +1234,10 @@ html.dark .sti-auth {
 .sti-signature-record strong {
   display: block;
   margin-top: 8px;
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
 }
 .sti-signature-record p {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   color: var(--sti-muted);
 }
 .sti-signature-record img {
@@ -1257,7 +1260,7 @@ html.dark .sti-auth {
   text-align: left;
 }
 .sti-table th {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   color: var(--sti-muted);
   font-weight: 650;
   background: var(--sti-column);
@@ -1267,7 +1270,7 @@ html.dark .sti-auth {
 .sti-table td {
   padding: 17px 15px;
   border-top: 1px solid var(--sti-border);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   max-width: 350px;
 }
 .sti-table tr:hover td {
@@ -1280,7 +1283,7 @@ html.dark .sti-auth {
 .sti-table-task strong {
   display: block;
   margin-top: 5px;
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   min-width: 160px;
 }
 .sti-person-cell {
@@ -1297,7 +1300,7 @@ html.dark .sti-auth {
 .sti-field.compact select {
   min-height: 36px;
   padding: 7px 12px;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
 }
 .sti-catalog-grid {
   display: grid;
@@ -1338,7 +1341,7 @@ html.dark .sti-auth {
   overflow-wrap: anywhere;
 }
 .sti-catalog-card > p:not(.sti-eyebrow) {
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   color: var(--sti-muted);
   margin: 8px 0 20px;
 }
@@ -1355,7 +1358,7 @@ html.dark .sti-auth {
   border-radius: 8px;
   background: var(--sti-bg);
   color: var(--sti-text);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   text-align: left;
 }
 .sti-client-projects button span {
@@ -1371,11 +1374,11 @@ html.dark .sti-auth {
   align-items: center;
   gap: 5px;
   color: var(--sti-violet) !important;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
   font-weight: 600;
 }
 .sti-catalog-explainer {
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   color: var(--sti-muted);
   margin-bottom: 18px;
 }
@@ -1385,7 +1388,7 @@ html.dark .sti-auth {
   align-items: center;
   padding: 18px 0;
   color: var(--sti-muted);
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
 }
 .sti-catalog-tip button {
   color: var(--sti-violet);
@@ -1401,13 +1404,13 @@ html.dark .sti-auth {
   color: var(--sti-muted);
 }
 .sti-empty h3 {
-  font-size: 16px;
+  font-size: var(--sti-font-md);
   font-weight: 650;
   color: var(--sti-text);
   margin: 15px 0 7px;
 }
 .sti-empty p {
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   max-width: 300px;
 }
 .sti-empty-icon {
@@ -1426,7 +1429,7 @@ html.dark .sti-auth {
   justify-content: center;
   gap: 10px;
   color: var(--sti-muted);
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
 }
 .sti-auth {
   min-height: 100dvh;
@@ -1453,7 +1456,7 @@ html.dark .sti-auth {
 }
 .sti-auth-card > p {
   color: var(--sti-muted);
-  font-size: 12px;
+  font-size: var(--sti-font-sm);
   margin: 8px 0 28px;
 }
 .sti-auth-card .sti-form {
@@ -1461,14 +1464,14 @@ html.dark .sti-auth {
 }
 .sti-auth-card .sti-button {
   min-height: 46px;
-  font-size: 13px !important;
+  font-size: var(--sti-font-sm) !important;
 }
 .sti-auth-footer {
   display: grid;
   gap: 25px;
   margin-top: 27px;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--sti-font-xs);
 }
 .sti-auth-footer > a {
   color: var(--sti-muted);
@@ -1548,14 +1551,14 @@ html.dark .sti-auth {
     padding: 17px;
   }
   .sti-task-card h3 {
-    font-size: 14px;
+    font-size: var(--sti-font-sm);
   }
   .sti-task-description {
-    font-size: 12px;
+    font-size: var(--sti-font-sm);
   }
   .sti-task-project,
   .sti-task-client {
-    font-size: 11px;
+    font-size: var(--sti-font-xs);
   }
 }
 @media (max-width: 1100px) and (min-width: 761px) {
@@ -1618,7 +1621,7 @@ html.dark .sti-auth {
     gap: 6px;
   }
   .sti-demo-link {
-    font-size: 11px;
+    font-size: var(--sti-font-xs);
   }
   .sti-content {
     padding: 24px 16px 15px;
@@ -1632,7 +1635,7 @@ html.dark .sti-auth {
     font-size: 28px;
   }
   .sti-page-heading > div > p:last-child {
-    font-size: 12px;
+    font-size: var(--sti-font-sm);
   }
   .sti-heading-actions {
     width: 100%;
@@ -1642,7 +1645,7 @@ html.dark .sti-auth {
   }
   .sti-button {
     min-height: 44px;
-    font-size: 12px !important;
+    font-size: var(--sti-font-sm) !important;
   }
   .sti-icon-button {
     min-width: 40px;
@@ -1650,7 +1653,7 @@ html.dark .sti-auth {
   }
   .sti-board-summary {
     gap: 13px;
-    font-size: 11px;
+    font-size: var(--sti-font-xs);
     flex-wrap: wrap;
     padding-bottom: 18px;
   }
@@ -1668,14 +1671,14 @@ html.dark .sti-auth {
   }
   .sti-view-switch button {
     min-height: 36px;
-    font-size: 12px;
+    font-size: var(--sti-font-sm);
   }
   .sti-search {
     width: 100%;
     min-height: 42px;
   }
   .sti-search input {
-    font-size: 12px;
+    font-size: var(--sti-font-sm);
   }
   .sti-filters {
     gap: 8px;
@@ -1689,10 +1692,10 @@ html.dark .sti-auth {
     flex: 1 1 44%;
     min-width: 0;
     min-height: 40px;
-    font-size: 11px;
+    font-size: var(--sti-font-xs);
   }
   .sti-filter-count {
-    font-size: 11px;
+    font-size: var(--sti-font-xs);
   }
   .sti-mobile-stage {
     display: flex;
@@ -1700,7 +1703,7 @@ html.dark .sti-auth {
     justify-content: space-between;
     gap: 15px;
     margin: 4px 0 12px;
-    font-size: 12px;
+    font-size: var(--sti-font-sm);
     font-weight: 650;
   }
   .sti-mobile-stage select {
@@ -1723,10 +1726,10 @@ html.dark .sti-auth {
     display: flex;
   }
   .sti-column-head h2 {
-    font-size: 14px;
+    font-size: var(--sti-font-sm);
   }
   .sti-column-hint {
-    font-size: 11px;
+    font-size: var(--sti-font-xs);
   }
   .sti-column-head .sti-icon-button {
     min-height: 30px;
@@ -1737,16 +1740,16 @@ html.dark .sti-auth {
     border-radius: 14px;
   }
   .sti-task-card h3 {
-    font-size: 14px;
+    font-size: var(--sti-font-sm);
   }
   .sti-task-description {
-    font-size: 12px;
+    font-size: var(--sti-font-sm);
   }
   .sti-task-code,
   .sti-task-project,
   .sti-task-client,
   .sti-status {
-    font-size: 11px;
+    font-size: var(--sti-font-xs);
   }
   .sti-task-bottom {
     margin-top: 16px;
@@ -1755,25 +1758,25 @@ html.dark .sti-auth {
   .sti-avatar.small {
     width: 30px;
     height: 30px;
-    font-size: 11px;
+    font-size: var(--sti-font-xs);
   }
   .sti-unassigned,
   .sti-attachments {
-    font-size: 11px;
+    font-size: var(--sti-font-xs);
   }
   .sti-add-task {
     min-height: 44px;
-    font-size: 12px !important;
+    font-size: var(--sti-font-sm) !important;
   }
   .sti-column-empty strong {
-    font-size: 12px;
+    font-size: var(--sti-font-sm);
   }
   .sti-column-empty span {
-    font-size: 11px;
+    font-size: var(--sti-font-xs);
   }
   .sti-board-help {
     align-items: flex-start;
-    font-size: 11px;
+    font-size: var(--sti-font-xs);
     line-height: 1.7;
   }
   .sti-board-help svg {
@@ -1795,7 +1798,7 @@ html.dark .sti-auth {
     margin: 20px 0;
   }
   .sti-table td {
-    font-size: 12px;
+    font-size: var(--sti-font-sm);
   }
   .sti-panel-head {
     padding: 22px;
@@ -1809,14 +1812,14 @@ html.dark .sti-auth {
   .sti-field input,
   .sti-field select,
   .sti-field textarea {
-    font-size: 16px;
+    font-size: var(--sti-font-md);
   }
   .sti-field > label {
-    font-size: 13px;
+    font-size: var(--sti-font-sm);
   }
   .sti-theme-control select {
     min-height: 40px;
-    font-size: 12px;
+    font-size: var(--sti-font-sm);
   }
   .sti-auth {
     padding: 18px;
@@ -1826,11 +1829,11 @@ html.dark .sti-auth {
   }
   .sti-nav-item {
     min-height: 44px;
-    font-size: 13px;
+    font-size: var(--sti-font-sm);
   }
   .sti-logout {
     min-height: 40px;
-    font-size: 12px !important;
+    font-size: var(--sti-font-sm) !important;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1840,5 +1843,94 @@ html.dark .sti-auth {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Operational metadata and mobile controls: readable labels, explicit context, generous targets. */
+.sti-task-context {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+}
+.sti-task-context p {
+  display: grid;
+  gap: 2px;
+}
+.sti-task-context p > span {
+  color: var(--sti-muted);
+  font-size: var(--sti-font-xs);
+}
+.sti-task-context strong {
+  color: var(--sti-text);
+  font-size: var(--sti-font-sm);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.sti-nav-count {
+  white-space: nowrap;
+}
+.sti-mobile-filter-toggle {
+  display: none;
+}
+@media (max-width: 760px) {
+  .sti-workspace button,
+  .sti-workspace a,
+  .sti-workspace select,
+  .sti-workspace input,
+  .sti-auth button,
+  .sti-auth a,
+  .sti-auth select,
+  .sti-auth input {
+    min-height: 44px;
+  }
+  .sti-workspace .sti-icon-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .sti-workspace .sti-drag-handle {
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+  }
+  .sti-workspace .sti-task-meta {
+    height: auto;
+    min-height: 20px;
+  }
+  .sti-workspace select,
+  .sti-workspace input,
+  .sti-workspace textarea,
+  .sti-workspace .sti-field.compact select,
+  .sti-workspace .sti-search input,
+  .sti-auth select,
+  .sti-auth input {
+    font-size: 16px;
+  }
+  .sti-breadcrumb > span {
+    display: none;
+  }
+  .sti-toolbar {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+  }
+  .sti-mobile-filter-toggle {
+    display: inline-flex;
+  }
+  .sti-toolbar > .sti-search {
+    grid-column: 1 / -1;
+  }
+  .sti-filters {
+    display: none;
+  }
+  .sti-filters.is-open {
+    display: flex;
+  }
+  .sti-filters select {
+    flex-basis: 100%;
+  }
+  .sti-filters .sti-filter-count {
+    margin-left: 0;
+    width: 100%;
   }
 }

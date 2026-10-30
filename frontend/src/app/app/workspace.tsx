@@ -188,7 +188,8 @@ export function Workspace({ account }: { account: Account }) {
                         (t) =>
                           t.status === "POR_HACER" || t.status === "EN_PROCESO",
                       ).length
-                    }
+                    }{" "}
+                    activas
                   </span>
                 )}
               </a>

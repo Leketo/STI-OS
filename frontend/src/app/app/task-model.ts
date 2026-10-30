@@ -90,6 +90,22 @@ export const isOpen = (task: Task) =>
 export const isAssigned = (task: Task, accountId: string) =>
   task.assignees.some((a) => a.id === accountId);
 
+/** Start on a populated stage, while respecting an explicitly selected empty stage. */
+export function chooseMobileStage(
+  tasks: readonly Pick<Task, "status">[],
+  stages: readonly { status: string }[],
+  selected: string | null,
+): string {
+  if (selected && stages.some((stage) => stage.status === selected))
+    return selected;
+  return (
+    stages.find((stage) => tasks.some((task) => task.status === stage.status))
+      ?.status ??
+    stages[0]?.status ??
+    "POR_HACER"
+  );
+}
+
 /** Mirrors the existing UI's actions; the server remains the authority for every mutation. */
 export function canMove(
   task: Task,
