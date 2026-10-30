@@ -1,360 +1,1383 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { deviceLocation, errorFor, postWithCsrf, sendWithCsrf, uploadWithCsrf } from "./api";
+import { useRef, useState, type FormEvent } from "react";
+import Image from "next/image";
+import {
+  DragDropContext,
+  Draggable,
+  Droppable,
+  type DropResult,
+} from "@hello-pangea/dnd";
+import {
+  ArrowRight,
+  Check,
+  CheckCheck,
+  Circle,
+  ClipboardList,
+  Clock3,
+  FileCheck2,
+  GripVertical,
+  ImagePlus,
+  LayoutGrid,
+  List,
+  LoaderCircle,
+  Paperclip,
+  Plus,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  UserRound,
+  X,
+} from "lucide-react";
+import {
+  deviceLocation,
+  errorFor,
+  postWithCsrf,
+  sendWithCsrf,
+  uploadWithCsrf,
+} from "./api";
 import { SignaturePad } from "./signature-pad";
+import {
+  canConfirm,
+  chooseMobileStage,
+  canDrop,
+  canMove,
+  eventLabel,
+  initials,
+  isAssigned,
+  isOpen,
+  isOperator,
+  MAX_PHOTOS,
+  stageLabel,
+  STAGES,
+  type Account,
+  type Detail,
+  type Task,
+} from "./task-model";
+import { EmptyState, Panel } from "./workspace-ui";
+import type { WorkspaceData } from "./use-workspace-data";
 
-type Role = "ADMIN" | "SUPERVISOR" | "USUARIO" | "CLIENTE";
-type Assignee = { id: string; name: string; confirmed: boolean };
-type Task = {
-  id: string; code: string; projectId: string; title: string; detail: string | null;
-  status: string; createdAt: string; assignees: Assignee[]; confirmed: number; pending: number;
-  photoCount: number; signed: boolean;
+type Props = {
+  account: Account;
+  data: WorkspaceData;
+  projectFilter: string;
+  onProjectFilter: (id: string) => void;
 };
-type Photo = { id: string; contentType: string; byteSize: number; uploadedAt: string; uploadedBy: string };
-type Signature = { id: string; signerName: string; signedOn: string; signedAt: string; presentedBy: string; remote: boolean; current: boolean };
-type TaskEvent = { id: string; kind: string; fromStatus: string | null; toStatus: string | null; actorName: string; occurredAt: string; locationAbsentReason: string | null };
-type Detail = Task & { events: TaskEvent[]; photos: Photo[]; signatures: Signature[] };
-type Project = { id: string; clientId: string; name: string };
-type Operator = { id: string; name: string; role: Role };
+type PendingAction = {
+  task: Task;
+  to: string;
+  title: string;
+  description: string;
+};
+const dateTime = (value: string) =>
+  new Intl.DateTimeFormat("es-PY", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 
-const COLUMNS = [
-  { status: "POR_HACER", label: "Por hacer" },
-  { status: "EN_PROCESO", label: "En proceso" },
-  { status: "FINALIZADO", label: "Finalizadas" },
-];
-const INVOICED = { status: "FACTURADO", label: "Facturadas" };
-const MAX_PHOTOS = 5;
-const OPEN = ["POR_HACER", "EN_PROCESO"];
-
-/** The backend answers each rejection with its own status so we can name the real problem. */
-function photoError(status: number): string {
-  if (status === 415) return "Ese archivo no es una imagen: solo se aceptan JPEG y PNG, y se revisa el contenido, no el nombre.";
-  if (status === 413) return "La foto supera los 10 MB.";
-  if (status === 409) return `La tarea ya tiene ${MAX_PHOTOS} fotos.`;
-  if (status === 400) return "La tarea ya está cerrada y no admite más fotos.";
-  return errorFor({ status } as Response);
-}
-const inputClass = "w-full rounded-lg border border-slate-300 px-3 py-2.5 focus:border-blue-600 focus:outline-none";
-const actionClass = "rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold hover:bg-slate-100 disabled:opacity-60";
-
-export function TaskBoard({ account }: { account: { id: string; role: Role } }) {
-  const operator = account.role === "ADMIN" || account.role === "SUPERVISOR";
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [operators, setOperators] = useState<Operator[]>([]);
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState("");
-  const [projectId, setProjectId] = useState("");
+export function TaskBoard({
+  account,
+  data,
+  projectFilter,
+  onProjectFilter,
+}: Props) {
+  const { tasks, projects, clients, operators, busy, loading, mutate } = data;
+  const operator = isOperator(account.role);
+  const stages = operator
+    ? STAGES
+    : STAGES.filter((s) => s.status !== "FACTURADO");
+  const [search, setSearch] = useState("");
+  const [clientFilter, setClientFilter] = useState("");
+  const [personFilter, setPersonFilter] = useState("");
+  const [view, setView] = useState<"board" | "list">("board");
+  const [mobileStage, setMobileStage] = useState<string | null>(null);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newProject, setNewProject] = useState("");
+  const [newClient, setNewClient] = useState("");
   const [title, setTitle] = useState("");
-  const [detail, setDetail] = useState("");
+  const [description, setDescription] = useState("");
+  const [selectedId, setSelectedId] = useState("");
   const [opened, setOpened] = useState<Detail | null>(null);
-  const [signing, setSigning] = useState("");
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const detailRequest = useRef(0);
+  const [signing, setSigning] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(
+    null,
+  );
+  const [dragId, setDragId] = useState("");
+  const [pendingMove, setPendingMove] = useState<{
+    id: string;
+    to: string;
+  } | null>(null);
+  const [panelMessage, setPanelMessage] = useState("");
+  const selected = tasks.find((t) => t.id === selectedId) ?? opened;
+  const dragging = tasks.find((t) => t.id === dragId);
+  const effectiveClient =
+    clientFilter ||
+    projects.find((p) => p.id === projectFilter)?.clientId ||
+    "";
+  const filtered = tasks
+    .filter((task) => {
+      const project = projects.find((p) => p.id === task.projectId);
+      const client = clients.find(
+        (c) => c.id === (task.clientId || project?.clientId),
+      );
+      if (
+        effectiveClient &&
+        (task.clientId || project?.clientId) !== effectiveClient
+      )
+        return false;
+      if (projectFilter && task.projectId !== projectFilter) return false;
+      if (personFilter === "mine" && !isAssigned(task, account.id))
+        return false;
+      if (personFilter === "unassigned" && task.assignees.length) return false;
+      if (
+        personFilter &&
+        !["mine", "unassigned"].includes(personFilter) &&
+        !isAssigned(task, personFilter)
+      )
+        return false;
+      return `${task.code} ${task.title} ${project?.name ?? ""} ${client?.name ?? ""}`
+        .toLocaleLowerCase("es")
+        .includes(search.trim().toLocaleLowerCase("es"));
+    })
+    .map((task) =>
+      pendingMove?.id === task.id ? { ...task, status: pendingMove.to } : task,
+    );
+  const visibleMobileStage = chooseMobileStage(filtered, stages, mobileStage);
+  const hasFilters = !!(
+    search ||
+    effectiveClient ||
+    projectFilter ||
+    personFilter
+  );
 
-  const load = useCallback(async () => {
-    const [taskResponse, projectResponse] = await Promise.all([
-      fetch("/api/tasks", { credentials: "same-origin", cache: "no-store" }),
-      fetch("/api/projects", { credentials: "same-origin", cache: "no-store" }),
-    ]);
-    if (!taskResponse.ok || !projectResponse.ok) throw new Error("catalog");
-    setTasks(await taskResponse.json() as Task[]);
-    setProjects(await projectResponse.json() as Project[]);
-    if (operator) {
-      const response = await fetch("/api/operators", { credentials: "same-origin", cache: "no-store" });
-      if (response.ok) setOperators(await response.json() as Operator[]);
-    }
-  }, [operator]);
-
-  async function openDetail(taskId: string) {
-    if (opened && opened.id === taskId) { setOpened(null); return; }
-    setBusy(taskId);
+  async function readDetail(taskId: string) {
+    const request = ++detailRequest.current;
+    setDetailLoading(true);
+    setDetailError("");
     try {
-      const response = await fetch(`/api/tasks/${taskId}`, { credentials: "same-origin", cache: "no-store" });
-      if (!response.ok) { setMessage(errorFor(response)); return; }
-      setOpened(await response.json() as Detail);
-    } catch {
-      setMessage("No se pudo cargar el detalle de la tarea.");
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function refreshDetail(taskId: string) {
-    const response = await fetch(`/api/tasks/${taskId}`, { credentials: "same-origin", cache: "no-store" });
-    if (response.ok) setOpened(await response.json() as Detail);
-  }
-
-  async function upload(taskId: string, file: File) {
-    setBusy(taskId);
-    setMessage("");
-    try {
-      const response = await uploadWithCsrf(`/api/tasks/${taskId}/photos`, file);
-      if (!response.ok) { setMessage(photoError(response.status)); return; }
-      await load();
-      await refreshDetail(taskId);
-    } catch {
-      setMessage("No se pudo subir la foto.");
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function sign(taskId: string, signerName: string, signedOn: string, image: string) {
-    setBusy(taskId);
-    setMessage("");
-    try {
-      const response = await postWithCsrf(`/api/tasks/${taskId}/signature`, {
-        signerName, signedOn, image, location: await deviceLocation(),
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        credentials: "same-origin",
+        cache: "no-store",
       });
-      if (!response.ok) {
-        setMessage(response.status === 409 ? "La tarea ya tiene una firma vigente." : errorFor(response));
-        return;
-      }
-      setSigning("");
-      await load();
-      await refreshDetail(taskId);
-    } catch {
-      setMessage("No se pudo registrar la firma.");
+      if (!response.ok) throw new Error(errorFor(response));
+      const detail = (await response.json()) as Detail;
+      if (request === detailRequest.current) setOpened(detail);
+    } catch (error) {
+      if (request === detailRequest.current)
+        setDetailError(
+          error instanceof Error
+            ? error.message
+            : "No se pudo cargar el detalle.",
+        );
     } finally {
-      setBusy("");
+      if (request === detailRequest.current) setDetailLoading(false);
     }
   }
-
-  useEffect(() => {
-    let active = true;
-    Promise.resolve().then(load).catch(() => { if (active) setMessage("No se pudieron cargar las tareas."); });
-    return () => { active = false; };
-  }, [load]);
-
-  async function act(path: string, body: object, taskId: string, method = "POST") {
-    setBusy(taskId);
-    setMessage("");
-    try {
-      const response = await sendWithCsrf(method, path, body);
-      if (!response.ok) { setMessage(errorFor(response)); return; }
-      await load();
-      if (opened && opened.id === taskId) await refreshDetail(taskId);
-    } catch {
-      setMessage("No se pudo conectar con el servidor local. La acción pudo no registrarse.");
-    } finally {
-      setBusy("");
-    }
+  function openDetail(taskId: string) {
+    setSelectedId(taskId);
+    setOpened(null);
+    setSigning(false);
+    setPanelMessage("");
+    void readDetail(taskId);
+  }
+  function closeDetail() {
+    ++detailRequest.current;
+    setSelectedId("");
+    setOpened(null);
+    setSigning(false);
   }
 
-  async function refresh() {
-    setBusy("load");
-    setMessage("");
-    try {
-      await load();
-    } catch {
-      setMessage("No se pudieron cargar las tareas.");
-    } finally {
-      setBusy("");
-    }
+  async function act(
+    task: Task,
+    write: () => Promise<Response>,
+    success: string,
+    failure = errorFor,
+  ) {
+    const ok = await mutate(task.id, write, success, failure);
+    if (ok && selectedId === task.id) await readDetail(task.id);
+    if (!ok)
+      setPanelMessage(
+        data.mutationError.current || "No se pudo completar la operación.",
+      );
+    else setPanelMessage(success);
+    return ok;
   }
-
-  async function move(task: Task, to: string) {
-    await act(`/api/tasks/${task.id}/status`, { to, location: await deviceLocation() }, task.id);
+  async function executeMove(task: Task, to: string) {
+    setPendingMove({ id: task.id, to });
+    await act(
+      task,
+      async () =>
+        sendWithCsrf("POST", `/api/tasks/${task.id}/status`, {
+          to,
+          location: await deviceLocation(),
+        }),
+      `Tarea ${task.code}: ${stageLabel(to).toLowerCase()}.`,
+    );
+    setPendingMove(null);
   }
-
+  function requestMove(task: Task, to: string) {
+    if (to !== "ANULADA" && !canMove(task, to, account)) return;
+    if (to === "ANULADA") {
+      setPendingAction({
+        task,
+        to,
+        title: "¿Anular esta tarea?",
+        description:
+          "La tarea saldrá del tablero. Su historial se conserva. Esta acción no tiene una opción de deshacer en esta pantalla.",
+      });
+    } else if (
+      to === "POR_HACER" ||
+      (task.status === "FINALIZADO" && to === "EN_PROCESO")
+    ) {
+      setPendingAction({
+        task,
+        to,
+        title: "¿Volver a abrir el trabajo?",
+        description:
+          "Se reiniciarán las confirmaciones del equipo. Si había una firma vigente, quedará en el historial y será necesario volver a firmar.",
+      });
+    } else void executeMove(task, to);
+  }
   async function confirm(task: Task) {
-    await act(`/api/tasks/${task.id}/confirmations`, { location: await deviceLocation() }, task.id);
+    await act(
+      task,
+      async () =>
+        postWithCsrf(`/api/tasks/${task.id}/confirmations`, {
+          location: await deviceLocation(),
+        }),
+      "Tu parte quedó confirmada.",
+    );
   }
-
-  async function create(event: React.FormEvent<HTMLFormElement>) {
+  function onDragEnd(result: DropResult) {
+    setDragId("");
+    const to = result.destination?.droppableId;
+    const task = tasks.find((t) => t.id === result.draggableId);
+    if (!task || !to || !canDrop(task, to, account) || busy) return;
+    if (to === "FINALIZADO") void confirm(task);
+    else requestMove(task, to);
+  }
+  function openCreate(projectId = projectFilter) {
+    setNewProject(projectId);
+    setNewClient(
+      projects.find((p) => p.id === projectId)?.clientId || effectiveClient,
+    );
+    setPanelMessage("");
+    setCreating(true);
+  }
+  async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy("new");
-    setMessage("");
-    try {
-      const response = await postWithCsrf("/api/tasks", {
-        projectId, title: title.trim(), detail: detail.trim() || null, location: await deviceLocation(),
-      });
-      if (!response.ok) { setMessage(errorFor(response)); return; }
+    if (!title.trim() || !newProject) return;
+    const ok = await mutate(
+      "new",
+      async () =>
+        postWithCsrf("/api/tasks", {
+          projectId: newProject,
+          title: title.trim(),
+          detail: description.trim() || null,
+          location: await deviceLocation(),
+        }),
+      "Tarea creada en Por hacer.",
+    );
+    if (ok) {
       setTitle("");
-      setDetail("");
-      await load();
-    } catch {
-      setMessage("No se pudo confirmar el alta. Revisá el tablero antes de intentar otra vez.");
-    } finally {
-      setBusy("");
+      setDescription("");
+      setCreating(false);
+      setMobileStage("POR_HACER");
+    } else
+      setPanelMessage(
+        data.mutationError.current ||
+          "No se pudo confirmar el alta. Se conservó lo que escribiste.",
+      );
+  }
+  async function upload(task: Task, file: File) {
+    if (file.size > 10 * 1024 * 1024) {
+      setPanelMessage("La foto supera los 10 MB.");
+      return;
     }
+    await act(
+      task,
+      () => uploadWithCsrf(`/api/tasks/${task.id}/photos`, file),
+      "Foto agregada.",
+      (response) => {
+        if (response.status === 415) return "Usá una imagen JPEG o PNG válida.";
+        if (response.status === 413) return "La foto supera los 10 MB.";
+        if (response.status === 409) return "La tarea ya tiene cinco fotos.";
+        return errorFor(response);
+      },
+    );
   }
 
   function actions(task: Task) {
-    const mine = task.assignees.some(assignee => assignee.id === account.id);
-    const confirmedByMe = task.assignees.some(assignee => assignee.id === account.id && assignee.confirmed);
-    const disabled = busy === task.id;
-    return <div className="mt-3 flex flex-wrap gap-2">
-      {task.status === "POR_HACER" && (operator || mine) &&
-        <button className={actionClass} disabled={disabled} onClick={() => move(task, "EN_PROCESO")}>Iniciar</button>}
-      {task.status === "EN_PROCESO" && mine && !confirmedByMe &&
-        <button className={actionClass} disabled={disabled} onClick={() => confirm(task)}>Confirmar mi parte</button>}
-      {task.status === "EN_PROCESO" && operator &&
-        <button className={actionClass} disabled={disabled} onClick={() => move(task, "POR_HACER")}>Volver a por hacer</button>}
-      {task.status === "FINALIZADO" && operator &&
-        <button className={actionClass} disabled={disabled} onClick={() => move(task, "EN_PROCESO")}>Reabrir</button>}
-      {task.status === "FINALIZADO" && !task.signed && (operator || mine || account.role === "CLIENTE") &&
-        <button className={actionClass} disabled={disabled}
-          onClick={() => setSigning(signing === task.id ? "" : task.id)}>Firmar conformidad</button>}
-      {task.status === "FINALIZADO" && task.signed && account.role === "ADMIN" &&
-        <button className={actionClass} disabled={disabled} onClick={() => move(task, "FACTURADO")}>Marcar facturada</button>}
-      {account.role === "ADMIN" && task.status !== "FINALIZADO" && task.status !== "FACTURADO" &&
-        <button className={actionClass} disabled={disabled} onClick={() => move(task, "ANULADA")}>Anular</button>}
-    </div>;
+    const mine = isAssigned(task, account.id);
+    const allowed = (to: string) => canMove(task, to, account);
+    return (
+      <div className="sti-action-group">
+        {allowed("EN_PROCESO") && (
+          <button
+            className="sti-button primary"
+            disabled={!!busy}
+            onClick={() => requestMove(task, "EN_PROCESO")}
+          >
+            <ArrowRight size={16} />
+            {task.status === "FINALIZADO" ? "Reabrir tarea" : "Iniciar tarea"}
+          </button>
+        )}
+        {canConfirm(task, account.id) && (
+          <button
+            className="sti-button primary"
+            disabled={!!busy}
+            onClick={() => confirm(task)}
+          >
+            <CheckCheck size={17} />
+            Confirmar mi parte
+          </button>
+        )}
+        {task.status === "EN_PROCESO" &&
+          task.assignees.some((a) => a.id === account.id && a.confirmed) && (
+            <span className="sti-status green">
+              <Check size={14} />
+              Tu parte está confirmada
+            </span>
+          )}
+        {task.status === "FINALIZADO" &&
+          !task.signed &&
+          (operator || mine || account.role === "CLIENTE") && (
+            <button
+              className="sti-button primary"
+              disabled={!!busy}
+              onClick={() => setSigning(true)}
+            >
+              <FileCheck2 size={16} />
+              Firmar conformidad
+            </button>
+          )}
+        {allowed("FACTURADO") && (
+          <button
+            className="sti-button primary"
+            disabled={!!busy}
+            onClick={() => requestMove(task, "FACTURADO")}
+          >
+            <Check size={16} />
+            Marcar facturada
+          </button>
+        )}
+        {allowed("POR_HACER") && (
+          <button
+            className="sti-button secondary"
+            disabled={!!busy}
+            onClick={() => requestMove(task, "POR_HACER")}
+          >
+            Volver a por hacer
+          </button>
+        )}
+        {account.role === "ADMIN" && isOpen(task) && (
+          <button
+            className="sti-button danger-quiet"
+            disabled={!!busy}
+            onClick={() => requestMove(task, "ANULADA")}
+          >
+            Anular tarea
+          </button>
+        )}
+      </div>
+    );
   }
 
-  function attachments(task: Task) {
-    const mine = task.assignees.some(assignee => assignee.id === account.id);
-    if (!OPEN.includes(task.status) || !(operator || mine || account.role === "CLIENTE")
-      || task.photoCount >= MAX_PHOTOS) return null;
-    return <label className="mt-3 block text-xs text-slate-600">
-      Agregar foto ({task.photoCount}/{MAX_PHOTOS})
-      <input type="file" accept="image/jpeg,image/png" disabled={busy === task.id} className="mt-1 block w-full text-xs"
-        onChange={event => {
-          const file = event.target.files ? event.target.files[0] : null;
-          event.target.value = "";
-          if (file) upload(task.id, file);
-        }} />
-    </label>;
+  function card(task: Task, index: number) {
+    const project = projects.find((p) => p.id === task.projectId);
+    const client = clients.find(
+      (c) => c.id === (task.clientId || project?.clientId),
+    );
+    const movable = stages.some((stage) =>
+      canDrop(task, stage.status, account),
+    );
+    return (
+      <Draggable
+        key={task.id}
+        draggableId={task.id}
+        index={index}
+        isDragDisabled={!movable || !!busy || view === "list"}
+      >
+        {(provided, snapshot) => (
+          <article
+            ref={provided.innerRef}
+            {...provided.draggableProps}
+            className={`sti-task-card${snapshot.isDragging ? " is-dragging" : ""}${busy === task.id ? " is-saving" : ""}`}
+          >
+            <div className="sti-task-meta">
+              <span className="sti-task-code">{task.code}</span>
+              {busy === task.id ? (
+                <LoaderCircle
+                  size={15}
+                  className="sti-spin"
+                  aria-label="Guardando"
+                />
+              ) : (
+                movable && (
+                  <span
+                    className="sti-drag-handle"
+                    {...provided.dragHandleProps}
+                    aria-label={`Mover ${task.code}`}
+                  >
+                    <GripVertical size={17} />
+                  </span>
+                )
+              )}
+            </div>
+            <h3>
+              <button
+                className="sti-task-open"
+                id={`task-open-${task.id}`}
+                onClick={() => openDetail(task.id)}
+              >
+                {task.title}
+              </button>
+            </h3>
+            {task.detail?.trim() && (
+              <p className="sti-task-description">{task.detail}</p>
+            )}
+            <div className="sti-task-context">
+              {client && (
+                <p>
+                  <span>Cliente</span>
+                  <strong>{client.name}</strong>
+                </p>
+              )}
+              <p>
+                <span>Proyecto</span>
+                <strong>
+                  {project?.name ?? "Proyecto fuera de tu alcance"}
+                </strong>
+              </p>
+            </div>
+            {task.status === "EN_PROCESO" && task.assignees.length > 0 && (
+              <div
+                className="sti-progress"
+                aria-label={`${task.confirmed} de ${task.assignees.length} partes confirmadas`}
+              >
+                <span
+                  style={{
+                    width: `${(task.confirmed / task.assignees.length) * 100}%`,
+                  }}
+                />
+                <small>
+                  {task.confirmed}/{task.assignees.length}
+                </small>
+              </div>
+            )}
+            {task.status === "FINALIZADO" && (
+              <span className={`sti-status ${task.signed ? "green" : "amber"}`}>
+                <FileCheck2 size={12} />
+                {task.signed ? "Conformidad firmada" : "Pendiente de firma"}
+              </span>
+            )}
+            <div className="sti-task-bottom">
+              <div
+                className="sti-avatar-stack"
+                role="group"
+                aria-label={
+                  task.assignees.length
+                    ? `Responsables: ${task.assignees.map((a) => a.name).join(", ")}`
+                    : "Sin responsable"
+                }
+              >
+                {task.assignees.slice(0, 3).map((a) => (
+                  <span
+                    className={`sti-avatar small${a.confirmed ? " confirmed" : ""}`}
+                    title={`${a.name}${a.confirmed ? " · Confirmó su parte" : ""}`}
+                    key={a.id}
+                  >
+                    {initials(a.name)}
+                  </span>
+                ))}
+                {task.assignees.length > 3 && (
+                  <span className="sti-avatar small">
+                    +{task.assignees.length - 3}
+                  </span>
+                )}
+                {!task.assignees.length && (
+                  <span className="sti-unassigned">
+                    <UserRound size={13} />
+                    Sin asignar
+                  </span>
+                )}
+              </div>
+              <span
+                className="sti-attachments"
+                aria-label={`${task.photoCount} fotos`}
+              >
+                <Paperclip size={13} />
+                {task.photoCount}
+              </span>
+            </div>
+          </article>
+        )}
+      </Draggable>
+    );
   }
 
-  function panel(task: Task) {
-    if (!opened || opened.id !== task.id) return null;
-    return <div className="mt-3 space-y-3 rounded-lg bg-slate-50 p-3 text-xs">
-      {opened.photos.length > 0 && <div className="flex flex-wrap gap-2">
-        {opened.photos.map(photo => <a key={photo.id} href={`/api/tasks/${task.id}/photos/${photo.id}`}
-          target="_blank" rel="noreferrer" title={`Subida por ${photo.uploadedBy}`}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`/api/tasks/${task.id}/photos/${photo.id}`} alt={`Foto subida por ${photo.uploadedBy}`}
-            className="h-20 w-20 rounded border border-slate-300 object-cover" />
-        </a>)}
-      </div>}
-      {opened.signatures.map(signature => <div key={signature.id}
-        className={signature.current ? "rounded border border-emerald-300 bg-white p-2" : "rounded border border-slate-300 bg-white p-2 opacity-70"}>
-        <p className="font-semibold">{signature.current ? "Firma vigente" : "Firma superada"}</p>
-        <p>{signature.signerName} · {signature.signedOn} · presentada por {signature.presentedBy}
-          {signature.remote ? " (a distancia)" : " (presencial)"}</p>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`/api/tasks/${task.id}/signature?signatureId=${signature.id}`} alt={`Firma de ${signature.signerName}`}
-          className="mt-1 h-16 bg-white" />
-      </div>)}
-      <ol className="space-y-1">
-        {opened.events.map(event => <li key={event.id}>
-          <span className="font-mono">{event.kind}</span>
-          {event.toStatus ? ` → ${event.toStatus}` : ""} · {event.actorName} · {new Date(event.occurredAt).toLocaleString()}
-          {event.locationAbsentReason ? ` · sin ubicación` : ""}
-        </li>)}
-      </ol>
-    </div>;
-  }
-
-  function assignment(task: Task) {
-    if (!operator || !OPEN.includes(task.status)) return null;
-    const free = operators.filter(candidate => !task.assignees.some(assignee => assignee.id === candidate.id));
-    return <div className="mt-3 flex flex-wrap items-center gap-2">
-      <label className="sr-only" htmlFor={`assign-${task.id}`}>Asignar a</label>
-      <select id={`assign-${task.id}`} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
-        defaultValue="" disabled={busy === task.id || free.length === 0}
-        onChange={event => { if (event.target.value) act(`/api/tasks/${task.id}/assignments`, { userId: event.target.value }, task.id); }}>
-        <option value="">{free.length === 0 ? "Sin personas libres" : "Asignar a…"}</option>
-        {free.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
-      </select>
-    </div>;
-  }
-
-  function card(task: Task) {
-    const project = projects.find(candidate => candidate.id === task.projectId);
-    return <article key={task.id} className="rounded-xl border border-slate-200 bg-white p-3">
-      <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
-        <span className="font-mono">{task.code}</span>
-        <span className="flex items-center gap-2">
-          {task.photoCount > 0 && <span title="Fotos adjuntas">{task.photoCount} 📷</span>}
-          {task.signed && <span className="text-emerald-700" title="Firma vigente">Firmada</span>}
-          {task.assignees.length > 1 && <span>{task.confirmed} de {task.assignees.length}</span>}
+  return (
+    <>
+      <div className="sti-page-heading">
+        <div>
+          <p className="sti-eyebrow">OPERACIONES</p>
+          <h1>
+            Tablero de tareas<span className="sti-heading-dot">.</span>
+          </h1>
+          <p>Todo el trabajo, de principio a fin.</p>
+        </div>
+        <div className="sti-heading-actions">
+          <button
+            className="sti-button secondary"
+            disabled={loading || !!busy}
+            onClick={() => void data.refresh()}
+            aria-label="Actualizar tareas"
+          >
+            <RefreshCw size={16} className={loading ? "sti-spin" : ""} />
+            <span>Actualizar</span>
+          </button>
+          <button
+            className="sti-button primary"
+            disabled={loading || !!busy}
+            onClick={() => openCreate()}
+          >
+            <Plus size={18} />
+            Nueva tarea
+          </button>
+        </div>
+      </div>
+      <div className="sti-board-summary">
+        <span>
+          <span className="sti-status-dot violet" />
+          <strong>
+            {tasks.filter((t) => t.status === "EN_PROCESO").length}
+          </strong>{" "}
+          en proceso
+        </span>
+        <span>
+          <FileCheck2 size={14} />
+          <strong>
+            {tasks.filter((t) => t.status === "FINALIZADO" && !t.signed).length}
+          </strong>{" "}
+          {tasks.filter((t) => t.status === "FINALIZADO" && !t.signed)
+            .length === 1
+            ? "pendiente"
+            : "pendientes"}{" "}
+          de firma
         </span>
       </div>
-      <h4 className="mt-1 font-semibold">{task.title}</h4>
-      <p className="mt-1 text-xs text-slate-600">{project ? project.name : "Proyecto fuera de tu alcance"}</p>
-      {task.detail && <p className="mt-2 text-sm text-slate-700">{task.detail}</p>}
-      <ul className="mt-2 flex flex-wrap gap-1">
-        {task.assignees.map(assignee => <li key={assignee.id}
-          className={`rounded-full px-2 py-0.5 text-xs ${assignee.confirmed ? "bg-emerald-100 text-emerald-900" : "bg-slate-100 text-slate-700"}`}>
-          {assignee.name}{assignee.confirmed ? " ✓" : ""}
-          {operator && OPEN.includes(task.status) && <button className="ml-1 font-bold" aria-label={`Quitar a ${assignee.name}`}
-            disabled={busy === task.id}
-            onClick={() => act(`/api/tasks/${task.id}/assignments/${assignee.id}`, {}, task.id, "DELETE")}>×</button>}
-        </li>)}
-        {task.assignees.length === 0 && <li className="text-xs text-slate-500">Sin asignar</li>}
-      </ul>
-      {assignment(task)}
-      {attachments(task)}
-      {actions(task)}
-      <button type="button" className="mt-2 text-xs font-semibold text-blue-700 hover:underline"
-        disabled={busy === task.id} onClick={() => openDetail(task.id)}>
-        {opened && opened.id === task.id ? "Ocultar detalle" : "Ver detalle e historial"}
-      </button>
-      {signing === task.id && <SignaturePad busy={busy === task.id} onCancel={() => setSigning("")}
-        onSign={(signerName, signedOn, image) => sign(task.id, signerName, signedOn, image)} />}
-      {panel(task)}
-    </article>;
-  }
-
-  return <div className="mt-8 space-y-6 border-t border-slate-200 pt-8">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h2 className="text-xl font-bold">Órdenes de servicio</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Datos reales de tu cuenta. Cada paso guarda quién lo hizo, cuándo y la ubicación del dispositivo.
-        </p>
+      <div className="sti-toolbar">
+        <div
+          className="sti-view-switch"
+          role="group"
+          aria-label="Vista de tareas"
+        >
+          <button
+            className={view === "board" ? "is-active" : ""}
+            aria-pressed={view === "board"}
+            onClick={() => setView("board")}
+          >
+            <LayoutGrid size={16} />
+            Tablero
+          </button>
+          <button
+            className={view === "list" ? "is-active" : ""}
+            aria-pressed={view === "list"}
+            onClick={() => setView("list")}
+          >
+            <List size={16} />
+            Lista
+          </button>
+        </div>
+        <button
+          className="sti-mobile-filter-toggle sti-button secondary"
+          aria-expanded={mobileFiltersOpen}
+          aria-controls="task-filters"
+          onClick={() => setMobileFiltersOpen((open) => !open)}
+        >
+          <SlidersHorizontal size={16} />
+          Filtros{hasFilters ? " activos" : ""}
+        </button>
+        <div className="sti-search">
+          <Search size={16} />
+          <label htmlFor="task-search" className="sr-only">
+            Buscar tareas
+          </label>
+          <input
+            id="task-search"
+            placeholder="Buscar por tarea, código o proyecto…"
+            value={search}
+            disabled={!!dragId}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setMobileStage(null);
+            }}
+          />
+          {search && (
+            <button aria-label="Limpiar búsqueda" onClick={() => setSearch("")}>
+              <X size={14} />
+            </button>
+          )}
+        </div>
       </div>
-      <button type="button" className={actionClass} disabled={busy === "load"} onClick={refresh}>Actualizar</button>
-    </div>
-
-    <form onSubmit={create} className="space-y-3 rounded-xl border border-slate-200 p-4 sm:p-5">
-      <h3 className="font-semibold">Nueva tarea</h3>
-      <div>
-        <label htmlFor="task-project" className="mb-1 block text-sm font-medium">Proyecto</label>
-        <select id="task-project" className={inputClass} required value={projectId}
-          onChange={event => setProjectId(event.target.value)}>
-          <option value="">Seleccioná un proyecto</option>
-          {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+      <div
+        id="task-filters"
+        className={`sti-filters${mobileFiltersOpen ? " is-open" : ""}`}
+      >
+        <SlidersHorizontal size={15} aria-hidden="true" />
+        <label className="sr-only" htmlFor="filter-client">
+          Filtrar por cliente
+        </label>
+        <select
+          id="filter-client"
+          value={effectiveClient}
+          disabled={!!dragId}
+          onChange={(e) => {
+            setClientFilter(e.target.value);
+            setMobileStage(null);
+            onProjectFilter("");
+          }}
+        >
+          <option value="">Todos los clientes</option>
+          {clients.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
         </select>
+        <label className="sr-only" htmlFor="filter-project">
+          Filtrar por proyecto
+        </label>
+        <select
+          id="filter-project"
+          value={projectFilter}
+          disabled={!!dragId}
+          onChange={(e) => {
+            onProjectFilter(e.target.value);
+            setMobileStage(null);
+          }}
+        >
+          <option value="">Todos los proyectos</option>
+          {projects
+            .filter((p) => !effectiveClient || p.clientId === effectiveClient)
+            .map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+        </select>
+        <label className="sr-only" htmlFor="filter-person">
+          Filtrar por responsable
+        </label>
+        <select
+          id="filter-person"
+          value={personFilter}
+          disabled={!!dragId}
+          onChange={(e) => {
+            setPersonFilter(e.target.value);
+            setMobileStage(null);
+          }}
+        >
+          <option value="">Todos los responsables</option>
+          <option value="mine">Asignadas a mí</option>
+          <option value="unassigned">Sin asignar</option>
+          {operators.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        {hasFilters && (
+          <button
+            className="sti-clear-filters"
+            onClick={() => {
+              setSearch("");
+              setClientFilter("");
+              onProjectFilter("");
+              setPersonFilter("");
+              setMobileStage(null);
+            }}
+          >
+            Limpiar filtros <X size={13} />
+          </button>
+        )}
+        <span className="sti-filter-count">
+          Mostrando {filtered.length} de {tasks.length} tareas
+        </span>
       </div>
-      <div>
-        <label htmlFor="task-title" className="mb-1 block text-sm font-medium">Título</label>
-        <input id="task-title" className={inputClass} required maxLength={200} value={title}
-          onChange={event => setTitle(event.target.value)} />
-      </div>
-      <div>
-        <label htmlFor="task-detail" className="mb-1 block text-sm font-medium">Detalle (opcional)</label>
-        <textarea id="task-detail" className={inputClass} rows={2} maxLength={4000} value={detail}
-          onChange={event => setDetail(event.target.value)} />
-      </div>
-      <p className="text-xs text-slate-500">
-        La tarea se crea en Por hacer. {account.role === "USUARIO" ? "Vas a quedar asignado automáticamente." : null}
-        {account.role === "CLIENTE" ? "Un supervisor la asignará después." : null}
-      </p>
-      <button type="submit" disabled={busy === "new" || !projectId}
-        className="rounded-lg bg-blue-600 px-4 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
-        {busy === "new" ? "Guardando…" : "Crear tarea"}
-      </button>
-    </form>
+      {loading && !tasks.length ? (
+        <div className="sti-loading" role="status">
+          <LoaderCircle className="sti-spin" size={24} />
+          Cargando tus tareas…
+        </div>
+      ) : !data.hasLoaded ? (
+        <EmptyState
+          icon={<ClipboardList size={26} />}
+          title="No pudimos cargar tus tareas"
+        >
+          Usá Actualizar para volver a intentar. El detalle del error aparece
+          arriba.
+        </EmptyState>
+      ) : (
+        <DragDropContext
+          onDragStart={(start, responder) => {
+            setDragId(start.draggableId);
+            responder.announce(
+              "Tarea seleccionada. Usá las flechas para elegir un estado permitido.",
+            );
+          }}
+          onDragUpdate={(update, responder) => {
+            responder.announce(
+              update.destination
+                ? `Estado: ${stageLabel(update.destination.droppableId)}. Espacio para soltar.`
+                : "No se puede soltar en esta posición.",
+            );
+          }}
+          onDragEnd={(result, responder) => {
+            responder.announce(
+              result.destination
+                ? "Movimiento solicitado. El aviso de guardado confirmará el resultado."
+                : "Movimiento cancelado.",
+            );
+            onDragEnd(result);
+          }}
+          dragHandleUsageInstructions="Presioná espacio para tomar la tarea. Usá las flechas para moverla a un estado permitido; espacio para soltar y Escape para cancelar."
+        >
+          {view === "board" ? (
+            <>
+              <div className="sti-mobile-stage">
+                <label htmlFor="mobile-stage">Estado</label>
+                <select
+                  id="mobile-stage"
+                  value={visibleMobileStage}
+                  onChange={(e) => setMobileStage(e.target.value)}
+                >
+                  {stages.map((s) => (
+                    <option key={s.status} value={s.status}>
+                      {s.label} (
+                      {filtered.filter((t) => t.status === s.status).length})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div
+                className="sti-board"
+                style={
+                  { "--stage-count": stages.length } as React.CSSProperties
+                }
+              >
+                {stages.map((stage) => {
+                  const items = filtered.filter(
+                    (t) => t.status === stage.status,
+                  );
+                  return (
+                    <section
+                      key={stage.status}
+                      className={`sti-column ${stage.status === visibleMobileStage ? "mobile-active" : ""}`}
+                      aria-label={stage.label}
+                    >
+                      <header className="sti-column-head">
+                        <div>
+                          <span className={`sti-status-dot ${stage.tone}`} />
+                          <h2>{stage.label}</h2>
+                          <span className="sti-column-count">
+                            {items.length}
+                          </span>
+                        </div>
+                        {stage.status === "POR_HACER" && (
+                          <button
+                            className="sti-icon-button"
+                            aria-label="Nueva tarea en Por hacer"
+                            disabled={!!busy}
+                            onClick={() => openCreate()}
+                          >
+                            <Plus size={17} />
+                          </button>
+                        )}
+                      </header>
+                      <p className="sti-column-hint">{stage.hint}</p>
+                      <Droppable
+                        droppableId={stage.status}
+                        isDropDisabled={
+                          !!busy ||
+                          (!!dragging &&
+                            !canDrop(dragging, stage.status, account) &&
+                            dragging.status !== stage.status)
+                        }
+                      >
+                        {(provided, snapshot) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.droppableProps}
+                            className={`sti-column-body${snapshot.isDraggingOver ? " is-over" : ""}`}
+                          >
+                            {items.map(card)}
+                            {provided.placeholder}
+                            {!items.length && (
+                              <div className="sti-column-empty">
+                                <Circle size={23} strokeWidth={1} />
+                                <strong>
+                                  {hasFilters
+                                    ? "Sin coincidencias"
+                                    : "Nada por aquí todavía"}
+                                </strong>
+                                <span>
+                                  {hasFilters
+                                    ? "Probá con otros filtros."
+                                    : "Las tareas de este estado aparecerán acá."}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </Droppable>
+                      {stage.status === "POR_HACER" && (
+                        <button
+                          className="sti-add-task"
+                          disabled={!!busy}
+                          onClick={() => openCreate()}
+                        >
+                          <Plus size={15} />
+                          Agregar tarea
+                        </button>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+              <p className="sti-board-help">
+                <GripVertical size={13} />
+                Usá el asa para mover tareas entre estados permitidos. También
+                podés abrir una tarea y usar sus acciones.
+              </p>
+            </>
+          ) : (
+            <div className="sti-table-wrap">
+              <table className="sti-table">
+                <thead>
+                  <tr>
+                    <th>Tarea</th>
+                    <th>Cliente</th>
+                    <th>Proyecto</th>
+                    <th>Estado</th>
+                    <th>Responsables</th>
+                    <th>Fotos</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((task) => (
+                    <tr key={task.id}>
+                      <td>
+                        <button
+                          className="sti-table-task"
+                          id={`task-open-${task.id}`}
+                          onClick={() => openDetail(task.id)}
+                        >
+                          <span className="sti-task-code">{task.code}</span>
+                          <strong>{task.title}</strong>
+                        </button>
+                      </td>
+                      <td>
+                        {clients.find(
+                          (client) =>
+                            client.id ===
+                            (task.clientId ||
+                              projects.find(
+                                (project) => project.id === task.projectId,
+                              )?.clientId),
+                        )?.name ?? "Cliente"}
+                      </td>
+                      <td>
+                        {projects.find((p) => p.id === task.projectId)?.name ??
+                          "Proyecto"}
+                      </td>
+                      <td>
+                        <span
+                          className={`sti-status ${STAGES.find((s) => s.status === task.status)?.tone ?? "neutral"}`}
+                        >
+                          {stageLabel(task.status)}
+                        </span>
+                      </td>
+                      <td>
+                        {task.assignees.map((a) => a.name).join(", ") ||
+                          "Sin asignar"}
+                      </td>
+                      <td>{task.photoCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!filtered.length && (
+                <EmptyState
+                  icon={<ClipboardList size={26} />}
+                  title="Sin tareas para mostrar"
+                >
+                  {hasFilters
+                    ? "Cambiá los filtros o limpiá la búsqueda."
+                    : "Creá tu primera tarea para empezar."}
+                </EmptyState>
+              )}
+            </div>
+          )}
+        </DragDropContext>
+      )}
 
-    {message && <p role="alert" className="text-sm text-red-700">{message}</p>}
+      {creating && (
+        <Panel
+          title="Nueva tarea"
+          eyebrow="UN NUEVO PASO"
+          onClose={() => setCreating(false)}
+          busy={!!busy}
+        >
+          <p className="sti-panel-intro">
+            Contanos qué hay que hacer. La tarea empezará en Por hacer.
+          </p>
+          <form onSubmit={create} className="sti-form">
+            <div className="sti-field">
+              <label htmlFor="task-client">Cliente</label>
+              <select
+                id="task-client"
+                value={newClient}
+                disabled={!!busy}
+                onChange={(e) => {
+                  setNewClient(e.target.value);
+                  setNewProject("");
+                }}
+              >
+                <option value="">Seleccioná un cliente</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="sti-field">
+              <label htmlFor="task-project">
+                Proyecto <span>*</span>
+              </label>
+              <select
+                id="task-project"
+                value={newProject}
+                required
+                disabled={!!busy}
+                onChange={(e) => {
+                  setNewProject(e.target.value);
+                  setNewClient(
+                    projects.find((p) => p.id === e.target.value)?.clientId ??
+                      "",
+                  );
+                }}
+              >
+                <option value="">Seleccioná un proyecto</option>
+                {projects
+                  .filter((p) => !newClient || p.clientId === newClient)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+              </select>
+              {!projects.length && (
+                <p>
+                  Primero necesitás un proyecto.
+                  {account.role === "ADMIN" && (
+                    <a href="#projects" onClick={() => setCreating(false)}>
+                      {" "}
+                      Ir a Proyectos
+                    </a>
+                  )}
+                </p>
+              )}
+            </div>
+            <div className="sti-field">
+              <label htmlFor="task-title">
+                Título de la tarea <span>*</span>
+              </label>
+              <input
+                data-autofocus
+                id="task-title"
+                required
+                maxLength={200}
+                placeholder="Ej.: Revisar iluminación del acceso"
+                value={title}
+                disabled={!!busy}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </div>
+            <div className="sti-field">
+              <label htmlFor="task-detail">
+                Descripción <small>Opcional</small>
+              </label>
+              <textarea
+                id="task-detail"
+                maxLength={4000}
+                rows={5}
+                placeholder="Agregá el contexto que necesita el equipo…"
+                value={description}
+                disabled={!!busy}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+              <span className="sti-character-count">
+                {description.length}/4000
+              </span>
+            </div>
+            <p className="sti-form-help">
+              {account.role === "USUARIO"
+                ? "Vas a quedar asignado automáticamente."
+                : account.role === "CLIENTE"
+                  ? "Un supervisor asignará la tarea al equipo."
+                  : "Podés asignar responsables desde el detalle después de crearla."}
+            </p>
+            {panelMessage && (
+              <p className="sti-inline-message" role="alert">
+                {panelMessage}
+              </p>
+            )}
+            <div className="sti-form-actions">
+              <button
+                type="button"
+                className="sti-button secondary"
+                disabled={!!busy}
+                onClick={() => setCreating(false)}
+              >
+                Volver
+              </button>
+              <button
+                className="sti-button primary"
+                type="submit"
+                disabled={!!busy || !newProject || !title.trim()}
+              >
+                {busy === "new" ? (
+                  <LoaderCircle size={16} className="sti-spin" />
+                ) : (
+                  <Plus size={16} />
+                )}
+                {busy === "new" ? "Creando…" : "Crear tarea"}
+              </button>
+            </div>
+          </form>
+        </Panel>
+      )}
 
-    <div className={operator ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-4" : "grid gap-4 sm:grid-cols-3"}>
-      {(operator ? [...COLUMNS, INVOICED] : COLUMNS).map(column => {
-        const visible = tasks.filter(task => task.status === column.status);
-        return <section key={column.status} className="rounded-xl bg-slate-50 p-3">
-          <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-600">
-            {column.label} <span className="font-normal">({visible.length})</span>
-          </h3>
-          <div className="space-y-3">
-            {visible.map(card)}
-            {visible.length === 0 && <p className="text-xs text-slate-500">Sin tareas.</p>}
+      {selectedId && selected && (
+        <Panel
+          title={selected.title}
+          returnFocusId={`task-open-${selected.id}`}
+          eyebrow={selected.code}
+          onClose={closeDetail}
+          busy={!!busy}
+          wide
+        >
+          <div className="sti-detail-status">
+            <span
+              className={`sti-status ${STAGES.find((s) => s.status === selected.status)?.tone ?? "neutral"}`}
+            >
+              {stageLabel(selected.status)}
+            </span>
+            {selected.signed && (
+              <span className="sti-status green">
+                <FileCheck2 size={13} />
+                Firmada
+              </span>
+            )}
           </div>
-        </section>;
-      })}
-    </div>
-  </div>;
+          <p className="sti-detail-project">
+            {clients.find((c) => c.id === selected.clientId)?.name}{" "}
+            <ArrowRight size={13} />
+            {projects.find((p) => p.id === selected.projectId)?.name}
+          </p>
+          {panelMessage && (
+            <p className="sti-inline-message" role="status">
+              {panelMessage}
+            </p>
+          )}
+          <section className="sti-detail-section">
+            <h3>Descripción</h3>
+            <p className="sti-preserve-lines">
+              {selected.detail ||
+                "Esta tarea todavía no tiene una descripción."}
+            </p>
+          </section>
+          <section className="sti-detail-section">
+            <div className="sti-section-title">
+              <h3>Responsables</h3>
+              <span>
+                {selected.confirmed}/{selected.assignees.length} confirmados
+              </span>
+            </div>
+            <div className="sti-assignee-list">
+              {selected.assignees.map((a) => (
+                <div className="sti-assignee-row" key={a.id}>
+                  <span className="sti-avatar small">{initials(a.name)}</span>
+                  <span>
+                    {a.name}
+                    <small>
+                      {a.confirmed
+                        ? "Parte confirmada"
+                        : "Pendiente de confirmar"}
+                    </small>
+                  </span>
+                  {a.confirmed && (
+                    <Check size={16} className="sti-success-icon" />
+                  )}
+                  {operator && isOpen(selected) && (
+                    <button
+                      className="sti-icon-button"
+                      disabled={!!busy}
+                      aria-label={`Quitar a ${a.name}`}
+                      onClick={() =>
+                        void act(
+                          selected,
+                          () =>
+                            sendWithCsrf(
+                              "DELETE",
+                              `/api/tasks/${selected.id}/assignments/${a.id}`,
+                              {},
+                            ),
+                          "Asignación retirada.",
+                        )
+                      }
+                    >
+                      <X size={15} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {!selected.assignees.length && (
+                <p className="sti-muted">Todavía no hay personas asignadas.</p>
+              )}
+            </div>
+            {operator && isOpen(selected) && (
+              <div className="sti-field">
+                <label htmlFor="task-assign" className="sr-only">
+                  Agregar responsable
+                </label>
+                <select
+                  id="task-assign"
+                  value=""
+                  disabled={!!busy}
+                  onChange={(e) => {
+                    const userId = e.target.value;
+                    if (userId)
+                      void act(
+                        selected,
+                        () =>
+                          postWithCsrf(
+                            `/api/tasks/${selected.id}/assignments`,
+                            { userId },
+                          ),
+                        "Responsable asignado.",
+                      );
+                  }}
+                >
+                  <option value="">+ Agregar responsable</option>
+                  {operators
+                    .filter(
+                      (p) => !selected.assignees.some((a) => a.id === p.id),
+                    )
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+          </section>
+          <section className="sti-detail-section">
+            <h3>Acciones de la tarea</h3>
+            {actions(selected)}
+            {selected.status === "EN_PROCESO" && (
+              <p className="sti-form-help">
+                La tarea se finaliza cuando todas las personas asignadas
+                confirman su parte.
+              </p>
+            )}
+            {selected.status === "FACTURADO" && (
+              <p className="sti-muted">El servicio está cerrado y facturado.</p>
+            )}
+            {signing && (
+              <SignaturePad
+                busy={!!busy}
+                onCancel={() => setSigning(false)}
+                onSign={async (signerName, signedOn, image) => {
+                  const ok = await act(
+                    selected,
+                    async () =>
+                      postWithCsrf(`/api/tasks/${selected.id}/signature`, {
+                        signerName,
+                        signedOn,
+                        image,
+                        location: await deviceLocation(),
+                      }),
+                    "Conformidad registrada.",
+                    (response) =>
+                      response.status === 409
+                        ? "La tarea ya tiene una firma vigente."
+                        : errorFor(response),
+                  );
+                  if (ok) setSigning(false);
+                }}
+              />
+            )}
+          </section>
+          <section className="sti-detail-section">
+            <div className="sti-section-title">
+              <h3>Fotos del trabajo</h3>
+              <span>
+                {selected.photoCount}/{MAX_PHOTOS}
+              </span>
+            </div>
+            {isOpen(selected) &&
+              selected.photoCount < MAX_PHOTOS &&
+              (operator ||
+                isAssigned(selected, account.id) ||
+                account.role === "CLIENTE") && (
+                <label className={`sti-upload${busy ? " is-disabled" : ""}`}>
+                  <ImagePlus size={24} />
+                  <strong>Agregar una foto</strong>
+                  <span>JPEG o PNG · Hasta 10 MB · Máximo 5 fotos</span>
+                  <input
+                    type="file"
+                    aria-label="Agregar foto del trabajo"
+                    accept="image/jpeg,image/png"
+                    disabled={!!busy}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (file) void upload(selected, file);
+                    }}
+                  />
+                </label>
+              )}
+            {opened?.photos.length ? (
+              <div className="sti-photo-grid">
+                {opened.photos.map((photo) => (
+                  <a
+                    key={photo.id}
+                    href={`/api/tasks/${selected.id}/photos/${photo.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Image
+                      unoptimized
+                      width={240}
+                      height={160}
+                      src={`/api/tasks/${selected.id}/photos/${photo.id}`}
+                      alt={`Foto del trabajo, subida por ${photo.uploadedBy}`}
+                    />
+                  </a>
+                ))}
+              </div>
+            ) : (
+              !detailLoading && (
+                <p className="sti-muted">Todavía no hay fotos adjuntas.</p>
+              )
+            )}
+          </section>
+          {!!opened?.signatures.length && (
+            <section className="sti-detail-section">
+              <h3>Conformidad</h3>
+              {opened.signatures.map((signature) => (
+                <div className="sti-signature-record" key={signature.id}>
+                  <span
+                    className={`sti-status ${signature.current ? "green" : "neutral"}`}
+                  >
+                    {signature.current ? "Firma vigente" : "Firma anterior"}
+                  </span>
+                  <strong>{signature.signerName}</strong>
+                  <p>
+                    {signature.signedOn} ·{" "}
+                    {signature.remote ? "A distancia" : "Presencial"}
+                  </p>
+                  <Image
+                    unoptimized
+                    width={400}
+                    height={140}
+                    src={`/api/tasks/${selected.id}/signature?signatureId=${signature.id}`}
+                    alt={`Firma de ${signature.signerName}`}
+                  />
+                </div>
+              ))}
+            </section>
+          )}
+          <section className="sti-detail-section">
+            <h3>
+              <Clock3 size={17} />
+              Historial de actividad
+            </h3>
+            {detailLoading && (
+              <p className="sti-muted" role="status">
+                Cargando historial…
+              </p>
+            )}
+            {detailError && (
+              <div role="alert">
+                <p>{detailError}</p>
+                <button
+                  className="sti-button secondary"
+                  onClick={() => void readDetail(selected.id)}
+                >
+                  Reintentar
+                </button>
+              </div>
+            )}
+            {opened && (
+              <ol className="sti-timeline">
+                {[...opened.events]
+                  .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+                  .map((event) => (
+                    <li key={event.id}>
+                      <span className="sti-timeline-dot" />
+                      <strong>{eventLabel(event)}</strong>
+                      <span>{event.actorName}</span>
+                      <time dateTime={event.occurredAt}>
+                        {dateTime(event.occurredAt)}
+                      </time>
+                      {event.locationAbsentReason && (
+                        <small>Ubicación no disponible</small>
+                      )}
+                    </li>
+                  ))}
+              </ol>
+            )}
+          </section>
+        </Panel>
+      )}
+      {pendingAction && (
+        <Panel
+          title={pendingAction.title}
+          eyebrow={pendingAction.task.code}
+          onClose={() => setPendingAction(null)}
+          busy={!!busy}
+        >
+          <p className="sti-panel-intro">{pendingAction.description}</p>
+          <div className="sti-form-actions">
+            <button
+              className="sti-button secondary"
+              disabled={!!busy}
+              onClick={() => setPendingAction(null)}
+            >
+              Cancelar
+            </button>
+            <button
+              className={`sti-button ${pendingAction.to === "ANULADA" ? "danger" : "primary"}`}
+              disabled={!!busy}
+              onClick={async () => {
+                await executeMove(pendingAction.task, pendingAction.to);
+                setPendingAction(null);
+              }}
+            >
+              {busy ? "Guardando…" : "Confirmar"}
+            </button>
+          </div>
+        </Panel>
+      )}
+    </>
+  );
 }
