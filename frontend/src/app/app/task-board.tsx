@@ -39,6 +39,7 @@ import {
 import { SignaturePad } from "./signature-pad";
 import {
   canConfirm,
+  chooseMobileStage,
   canDrop,
   canMove,
   eventLabel,
@@ -89,7 +90,8 @@ export function TaskBoard({
   const [clientFilter, setClientFilter] = useState("");
   const [personFilter, setPersonFilter] = useState("");
   const [view, setView] = useState<"board" | "list">("board");
-  const [mobileStage, setMobileStage] = useState("POR_HACER");
+  const [mobileStage, setMobileStage] = useState<string | null>(null);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newProject, setNewProject] = useState("");
   const [newClient, setNewClient] = useState("");
@@ -144,6 +146,7 @@ export function TaskBoard({
     .map((task) =>
       pendingMove?.id === task.id ? { ...task, status: pendingMove.to } : task,
     );
+  const visibleMobileStage = chooseMobileStage(filtered, stages, mobileStage);
   const hasFilters = !!(
     search ||
     effectiveClient ||
@@ -428,22 +431,29 @@ export function TaskBoard({
             <h3>
               <button
                 className="sti-task-open"
+                id={`task-open-${task.id}`}
                 onClick={() => openDetail(task.id)}
               >
                 {task.title}
               </button>
             </h3>
-            <p className="sti-task-description">
-              {task.detail || "Abrí la tarea para ver sus detalles."}
-            </p>
-            <div
-              className="sti-task-project"
-              title={`${client?.name ?? ""} · ${project?.name ?? ""}`}
-            >
-              <span className="sti-project-dot" />
-              {project?.name ?? "Proyecto"}
+            {task.detail?.trim() && (
+              <p className="sti-task-description">{task.detail}</p>
+            )}
+            <div className="sti-task-context">
+              {client && (
+                <p>
+                  <span>Cliente</span>
+                  <strong>{client.name}</strong>
+                </p>
+              )}
+              <p>
+                <span>Proyecto</span>
+                <strong>
+                  {project?.name ?? "Proyecto fuera de tu alcance"}
+                </strong>
+              </p>
             </div>
-            {client && <p className="sti-task-client">{client.name}</p>}
             {task.status === "EN_PROCESO" && task.assignees.length > 0 && (
               <div
                 className="sti-progress"
@@ -559,9 +569,6 @@ export function TaskBoard({
             : "pendientes"}{" "}
           de firma
         </span>
-        <span className="sti-summary-total">
-          {tasks.length} tareas en tu alcance
-        </span>
       </div>
       <div className="sti-toolbar">
         <div
@@ -586,6 +593,15 @@ export function TaskBoard({
             Lista
           </button>
         </div>
+        <button
+          className="sti-mobile-filter-toggle sti-button secondary"
+          aria-expanded={mobileFiltersOpen}
+          aria-controls="task-filters"
+          onClick={() => setMobileFiltersOpen((open) => !open)}
+        >
+          <SlidersHorizontal size={16} />
+          Filtros{hasFilters ? " activos" : ""}
+        </button>
         <div className="sti-search">
           <Search size={16} />
           <label htmlFor="task-search" className="sr-only">
@@ -596,7 +612,10 @@ export function TaskBoard({
             placeholder="Buscar por tarea, código o proyecto…"
             value={search}
             disabled={!!dragId}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setMobileStage(null);
+            }}
           />
           {search && (
             <button aria-label="Limpiar búsqueda" onClick={() => setSearch("")}>
@@ -605,7 +624,10 @@ export function TaskBoard({
           )}
         </div>
       </div>
-      <div className="sti-filters">
+      <div
+        id="task-filters"
+        className={`sti-filters${mobileFiltersOpen ? " is-open" : ""}`}
+      >
         <SlidersHorizontal size={15} aria-hidden="true" />
         <label className="sr-only" htmlFor="filter-client">
           Filtrar por cliente
@@ -616,6 +638,7 @@ export function TaskBoard({
           disabled={!!dragId}
           onChange={(e) => {
             setClientFilter(e.target.value);
+            setMobileStage(null);
             onProjectFilter("");
           }}
         >
@@ -633,7 +656,10 @@ export function TaskBoard({
           id="filter-project"
           value={projectFilter}
           disabled={!!dragId}
-          onChange={(e) => onProjectFilter(e.target.value)}
+          onChange={(e) => {
+            onProjectFilter(e.target.value);
+            setMobileStage(null);
+          }}
         >
           <option value="">Todos los proyectos</option>
           {projects
@@ -651,7 +677,10 @@ export function TaskBoard({
           id="filter-person"
           value={personFilter}
           disabled={!!dragId}
-          onChange={(e) => setPersonFilter(e.target.value)}
+          onChange={(e) => {
+            setPersonFilter(e.target.value);
+            setMobileStage(null);
+          }}
         >
           <option value="">Todos los responsables</option>
           <option value="mine">Asignadas a mí</option>
@@ -670,12 +699,15 @@ export function TaskBoard({
               setClientFilter("");
               onProjectFilter("");
               setPersonFilter("");
+              setMobileStage(null);
             }}
           >
             Limpiar filtros <X size={13} />
           </button>
         )}
-        <span className="sti-filter-count">{filtered.length} resultados</span>
+        <span className="sti-filter-count">
+          Mostrando {filtered.length} de {tasks.length} tareas
+        </span>
       </div>
       {loading && !tasks.length ? (
         <div className="sti-loading" role="status">
@@ -721,7 +753,7 @@ export function TaskBoard({
                 <label htmlFor="mobile-stage">Estado</label>
                 <select
                   id="mobile-stage"
-                  value={mobileStage}
+                  value={visibleMobileStage}
                   onChange={(e) => setMobileStage(e.target.value)}
                 >
                   {stages.map((s) => (
@@ -745,7 +777,7 @@ export function TaskBoard({
                   return (
                     <section
                       key={stage.status}
-                      className={`sti-column ${stage.status === mobileStage ? "mobile-active" : ""}`}
+                      className={`sti-column ${stage.status === visibleMobileStage ? "mobile-active" : ""}`}
                       aria-label={stage.label}
                     >
                       <header className="sti-column-head">
@@ -829,6 +861,7 @@ export function TaskBoard({
                 <thead>
                   <tr>
                     <th>Tarea</th>
+                    <th>Cliente</th>
                     <th>Proyecto</th>
                     <th>Estado</th>
                     <th>Responsables</th>
@@ -841,11 +874,22 @@ export function TaskBoard({
                       <td>
                         <button
                           className="sti-table-task"
+                          id={`task-open-${task.id}`}
                           onClick={() => openDetail(task.id)}
                         >
                           <span className="sti-task-code">{task.code}</span>
                           <strong>{task.title}</strong>
                         </button>
+                      </td>
+                      <td>
+                        {clients.find(
+                          (client) =>
+                            client.id ===
+                            (task.clientId ||
+                              projects.find(
+                                (project) => project.id === task.projectId,
+                              )?.clientId),
+                        )?.name ?? "Cliente"}
                       </td>
                       <td>
                         {projects.find((p) => p.id === task.projectId)?.name ??
@@ -1023,6 +1067,7 @@ export function TaskBoard({
       {selectedId && selected && (
         <Panel
           title={selected.title}
+          returnFocusId={`task-open-${selected.id}`}
           eyebrow={selected.code}
           onClose={closeDetail}
           busy={!!busy}

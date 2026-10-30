@@ -78,3 +78,38 @@ test("backwards movement is restricted to operators and closed tasks cannot be d
     for (const to of ["POR_HACER", "EN_PROCESO", "FINALIZADO", "FACTURADO"])
       assert.equal(canDrop({ ...task, status }, to, admin), false);
 });
+
+test("mobile initially chooses a populated visible stage instead of an empty first column", async () => {
+  const { chooseMobileStage } = await import("../src/app/app/task-model.ts");
+  const stages = [
+    { status: "POR_HACER" },
+    { status: "EN_PROCESO" },
+    { status: "FINALIZADO" },
+  ];
+  assert.equal(
+    chooseMobileStage(
+      [{ status: "EN_PROCESO" }, { status: "FINALIZADO" }],
+      stages,
+      null,
+    ),
+    "EN_PROCESO",
+  );
+  assert.equal(
+    chooseMobileStage([{ status: "FACTURADO" }], stages, null),
+    "POR_HACER",
+  );
+  assert.equal(chooseMobileStage([], stages, null), "POR_HACER");
+});
+
+test("mobile respects an explicit empty stage but discards a stage unavailable to the role", async () => {
+  const { chooseMobileStage } = await import("../src/app/app/task-model.ts");
+  const stages = [{ status: "POR_HACER" }, { status: "EN_PROCESO" }];
+  assert.equal(
+    chooseMobileStage([{ status: "EN_PROCESO" }], stages, "POR_HACER"),
+    "POR_HACER",
+  );
+  assert.equal(
+    chooseMobileStage([{ status: "EN_PROCESO" }], stages, "FACTURADO"),
+    "EN_PROCESO",
+  );
+});
