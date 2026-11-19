@@ -8,6 +8,12 @@ import {
   eventLabel,
   finishesOnRemoval,
   paraguayDate,
+  filterPeople,
+  passwordProblem,
+  phoneProblem,
+  visibleStatuses,
+  personOptions,
+  assignable,
 } from "../src/app/app/task-model.ts";
 import { leaveIfSessionEnded } from "../src/app/app/api.ts";
 const task = {
@@ -193,4 +199,49 @@ test("N-16: the signature proposes the day in Paraguay at any hour, whatever the
   }
   // What the pad proposed before: the UTC day, already tomorrow from 21:00 in Paraguay.
   assert.equal(new Date("2026-11-19T00:37:00Z").toISOString().slice(0, 10), "2026-11-19");
+});
+
+// ---------- corte 2 (ENCARGO-DEV-002) ----------
+const people = [
+  { id: "a", role: "ADMIN", active: true },
+  { id: "s", role: "SUPERVISOR", active: false },
+  { id: "t", role: "USUARIO", active: true },
+  { id: "c", role: "CLIENTE", active: false },
+];
+test("CA-12: the user list filters by role and by state, combined", () => {
+  const ids = (list) => list.map((p) => p.id).join("");
+  assert.equal(ids(filterPeople(people, "", "all")), "astc");
+  assert.equal(ids(filterPeople(people, "", "active")), "at");
+  assert.equal(ids(filterPeople(people, "", "inactive")), "sc");
+  assert.equal(ids(filterPeople(people, "CLIENTE", "all")), "c");
+  assert.equal(ids(filterPeople(people, "CLIENTE", "active")), "");
+  assert.equal(ids(filterPeople(people, "SUPERVISOR", "inactive")), "s");
+});
+test("rule 3: a new password has 12 characters or more and both fields match", () => {
+  assert.match(passwordProblem("once-chars!", "once-chars!"), /12 caracteres/);
+  assert.match(passwordProblem("doce-chars-ok", "doce-chars-ok!"), /no coinciden/);
+  assert.equal(passwordProblem("doce-chars-ok", "doce-chars-ok"), "");
+});
+test("rule 7 (D-24): the phone is optional and up to 30 digits, spaces, +, - and parentheses", () => {
+  for (const ok of ["", "   ", "+595 (21) 555-0101", "1".repeat(30)])
+    assert.equal(phoneProblem(ok), "", ok);
+  for (const wrong of ["0981-ABC", "1".repeat(31), "0981;123"])
+    assert.notEqual(phoneProblem(wrong), "", wrong);
+});
+test("D-85: the status filter offers each role only the states it can see", () => {
+  const all = ["POR_HACER", "EN_PROCESO", "FINALIZADO", "FACTURADO"];
+  assert.deepEqual(visibleStatuses("ADMIN"), all);
+  assert.deepEqual(visibleStatuses("SUPERVISOR"), all);
+  for (const role of ["USUARIO", "CLIENTE"])
+    assert.deepEqual(visibleStatuses(role), all.filter((s) => s !== "FACTURADO"), role);
+});
+test("D-86 and rule 5: only the ADMIN filters by an inactive person, and nobody assigns one", () => {
+  const operators = [
+    { id: "on", name: "Activa", role: "USUARIO", active: true },
+    { id: "off", name: "Inactiva", role: "USUARIO", active: false },
+    { id: "old", name: "Sin dato", role: "USUARIO" },
+  ];
+  assert.deepEqual(personOptions(operators, "ADMIN").map((p) => p.id), ["on", "off", "old"]);
+  assert.deepEqual(personOptions(operators, "SUPERVISOR").map((p) => p.id), ["on", "old"]);
+  assert.deepEqual(assignable(operators).map((p) => p.id), ["on", "old"]);
 });

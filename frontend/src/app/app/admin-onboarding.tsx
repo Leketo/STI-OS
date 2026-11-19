@@ -8,14 +8,14 @@ import {
   LoaderCircle,
   Plus,
   Search,
-  Users,
 } from "lucide-react";
 import { errorFor, postWithCsrf } from "./api";
-import { initials, type Role } from "./task-model";
+
 import { EmptyState, Panel } from "./workspace-ui";
 import type { WorkspaceData } from "./use-workspace-data";
 
-type View = "clients" | "projects" | "users";
+/** User management lives in users.tsx since corte 2 (ENCARGO-DEV-002). */
+type View = "clients" | "projects";
 const content = {
   clients: {
     title: "Clientes",
@@ -29,18 +29,6 @@ const content = {
     singular: "proyecto",
     icon: FolderKanban,
   },
-  users: {
-    title: "Usuarios",
-    description: "Las personas que hacen que todo avance.",
-    singular: "cuenta",
-    icon: Users,
-  },
-};
-const roles: Record<Role, string> = {
-  ADMIN: "Administrador",
-  SUPERVISOR: "Supervisor",
-  USUARIO: "Técnico",
-  CLIENTE: "Cliente",
 };
 
 export function AdminOnboarding({
@@ -86,7 +74,7 @@ function CatalogView({
   initialClientId?: string;
   onCreateProject: (clientId: string) => void;
 }) {
-  const { clients, projects, operators, tasks, busy, loading, mutate } = data;
+  const { clients, projects, tasks, busy, loading, mutate } = data;
   const meta = content[view];
   const Icon = meta.icon;
   const [search, setSearch] = useState("");
@@ -96,9 +84,6 @@ function CatalogView({
   );
   const [name, setName] = useState("");
   const [clientId, setClientId] = useState(initialClientId);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState<Role>("USUARIO");
   const [message, setMessage] = useState("");
   const matching = (value: string) =>
     value
@@ -113,38 +98,19 @@ function CatalogView({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!name.trim()) return;
-    const endpoint =
-      view === "clients"
-        ? "/api/clients"
-        : view === "projects"
-          ? "/api/projects"
-          : "/api/accounts";
+    const endpoint = view === "clients" ? "/api/clients" : "/api/projects";
     const body =
       view === "clients"
         ? { name: name.trim() }
-        : view === "projects"
-          ? { clientId, name: name.trim() }
-          : {
-              name: name.trim(),
-              email: email.trim().toLowerCase(),
-              password,
-              role,
-              clientId: role === "CLIENTE" ? clientId : null,
-            };
+        : { clientId, name: name.trim() };
     const ok = await mutate(
       `new-${view}`,
       () => postWithCsrf(endpoint, body),
-      `${view === "clients" ? "Cliente creado" : view === "projects" ? "Proyecto creado" : "Cuenta creada"}.`,
-      (response) =>
-        response.status === 409 && view === "users"
-          ? "Ese correo ya está registrado."
-          : errorFor(response),
+      `${view === "clients" ? "Cliente creado" : "Proyecto creado"}.`,
+      errorFor,
     );
-    // Never retain an initial password after a submission attempt.
-    setPassword("");
     if (ok) {
       setName("");
-      setEmail("");
       setCreating(false);
     } else
       setMessage(data.mutationError.current || "No se pudo confirmar el alta.");
@@ -154,9 +120,7 @@ function CatalogView({
     <>
       <div className="sti-page-heading">
         <div>
-          <p className="sti-eyebrow">
-            {view === "users" ? "ADMINISTRACIÓN" : "ESPACIO DE TRABAJO"}
-          </p>
+          <p className="sti-eyebrow">ESPACIO DE TRABAJO</p>
           <h1>
             {meta.title}
             <span className="sti-heading-dot">.</span>
@@ -170,7 +134,7 @@ function CatalogView({
             onClick={() => startCreate()}
           >
             <Plus size={17} />
-            {view === "users" ? "Nueva cuenta" : `Nuevo ${meta.singular}`}
+            {`Nuevo ${meta.singular}`}
           </button>
         )}
       </div>
@@ -306,53 +270,6 @@ function CatalogView({
             })}
         </div>
       )}
-      {view === "users" && (
-        <>
-          <p className="sti-catalog-explainer">
-            Equipo operativo: técnicos, supervisores y administradores. Las
-            cuentas de clientes se crean con su cliente asociado.
-          </p>
-          <div className="sti-table-wrap">
-            <table className="sti-table">
-              <thead>
-                <tr>
-                  <th>Persona</th>
-                  <th>Rol</th>
-                  <th>Tareas asignadas</th>
-                </tr>
-              </thead>
-              <tbody>
-                {operators
-                  .filter((p) => matching(p.name))
-                  .map((person) => (
-                    <tr key={person.id}>
-                      <td>
-                        <span className="sti-person-cell">
-                          <span className="sti-avatar">
-                            {initials(person.name)}
-                          </span>
-                          <strong>{person.name}</strong>
-                        </span>
-                      </td>
-                      <td>
-                        <span className="sti-status neutral">
-                          {roles[person.role]}
-                        </span>
-                      </td>
-                      <td>
-                        {
-                          tasks.filter((t) =>
-                            t.assignees.some((a) => a.id === person.id),
-                          ).length
-                        }
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
       {!loading &&
         data.hasLoaded &&
         ((view === "clients" && !clients.some((c) => matching(c.name))) ||
@@ -363,8 +280,7 @@ function CatalogView({
                 matching(
                   `${p.name} ${clients.find((c) => c.id === p.clientId)?.name ?? ""}`,
                 ),
-            )) ||
-          (view === "users" && !operators.some((p) => matching(p.name)))) && (
+            ))) && (
           <EmptyState
             icon={<Icon size={28} />}
             title={
@@ -383,20 +299,15 @@ function CatalogView({
 
       {creating && (
         <Panel
-          title={view === "users" ? "Nueva cuenta" : `Nuevo ${meta.singular}`}
+          title={`Nuevo ${meta.singular}`}
           eyebrow={meta.title.toUpperCase()}
           busy={!!busy}
-          onClose={() => {
-            setCreating(false);
-            setPassword("");
-          }}
+          onClose={() => setCreating(false)}
         >
           <p className="sti-panel-intro">
             {view === "clients"
               ? "Empezá por el nombre. Después podés organizar sus proyectos."
-              : view === "projects"
-                ? "Cada proyecto pertenece a un cliente y reúne sus tareas."
-                : "Elegí el rol que corresponde a esta persona."}
+              : "Cada proyecto pertenece a un cliente y reúne sus tareas."}
           </p>
           <form className="sti-form" onSubmit={submit}>
             {view === "projects" && (
@@ -425,11 +336,7 @@ function CatalogView({
             )}
             <div className="sti-field">
               <label htmlFor="entity-name">
-                {view === "clients"
-                  ? "Nombre del cliente"
-                  : view === "projects"
-                    ? "Nombre del proyecto"
-                    : "Nombre completo"}{" "}
+                {view === "clients" ? "Nombre del cliente" : "Nombre del proyecto"}{" "}
                 <span>*</span>
               </label>
               <input
@@ -443,86 +350,10 @@ function CatalogView({
                 placeholder={
                   view === "projects"
                     ? "Ej.: Casa central"
-                    : view === "clients"
-                      ? "Ej.: Nombre de la empresa"
-                      : "Nombre y apellido"
+                    : "Ej.: Nombre de la empresa"
                 }
               />
             </div>
-            {view === "users" && (
-              <>
-                <div className="sti-field">
-                  <label htmlFor="account-email">
-                    Correo electrónico <span>*</span>
-                  </label>
-                  <input
-                    id="account-email"
-                    type="email"
-                    autoComplete="off"
-                    required
-                    maxLength={254}
-                    value={email}
-                    disabled={!!busy}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                <div className="sti-field">
-                  <label htmlFor="account-password">
-                    Contraseña inicial <span>*</span>
-                  </label>
-                  <input
-                    id="account-password"
-                    type="password"
-                    autoComplete="new-password"
-                    required
-                    minLength={12}
-                    maxLength={1024}
-                    value={password}
-                    disabled={!!busy}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                  <p>Usá al menos 12 caracteres.</p>
-                </div>
-                <div className="sti-field">
-                  <label htmlFor="account-role">
-                    Rol <span>*</span>
-                  </label>
-                  <select
-                    id="account-role"
-                    value={role}
-                    disabled={!!busy}
-                    onChange={(e) => setRole(e.target.value as Role)}
-                  >
-                    {(Object.keys(roles) as Role[]).map((r) => (
-                      <option key={r} value={r}>
-                        {roles[r]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {role === "CLIENTE" && (
-                  <div className="sti-field">
-                    <label htmlFor="account-client">
-                      Cliente asociado <span>*</span>
-                    </label>
-                    <select
-                      id="account-client"
-                      value={clientId}
-                      required
-                      disabled={!!busy}
-                      onChange={(e) => setClientId(e.target.value)}
-                    >
-                      <option value="">Seleccioná un cliente</option>
-                      {clients.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </>
-            )}
             {message && (
               <p className="sti-inline-message" role="alert">
                 {message}
@@ -533,10 +364,7 @@ function CatalogView({
                 type="button"
                 className="sti-button secondary"
                 disabled={!!busy}
-                onClick={() => {
-                  setCreating(false);
-                  setPassword("");
-                }}
+                onClick={() => setCreating(false)}
               >
                 Volver
               </button>
@@ -546,9 +374,7 @@ function CatalogView({
                 disabled={
                   !!busy ||
                   !name.trim() ||
-                  ((view === "projects" ||
-                    (view === "users" && role === "CLIENTE")) &&
-                    !clientId)
+                  (view === "projects" && !clientId)
                 }
               >
                 {busy ? (

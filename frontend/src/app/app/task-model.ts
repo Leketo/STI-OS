@@ -5,10 +5,82 @@ export type Account = {
   email: string;
   role: Role;
   clientId: string | null;
+  /** D-23: an initial password is in force; the person can only replace it or leave. */
+  mustChangePassword?: boolean;
 };
 export type Client = { id: string; name: string };
 export type Project = { id: string; clientId: string; name: string };
-export type Operator = { id: string; name: string; role: Role };
+/** {@code active} is false only in the ADMIN's list with inactive people (D-86); they are never offered to assign. */
+export type Operator = { id: string; name: string; role: Role; active?: boolean };
+/** One person in the user list (ENCARGO-DEV-002). */
+export type Person = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: Role;
+  clientId: string | null;
+  clientName: string | null;
+  active: boolean;
+  mustChangePassword: boolean;
+  /** Every task of the person but the cancelled ones: what the board shows filtered by them (D-84). */
+  assignedTasks: number;
+  /** Tasks in progress the person has not confirmed, for the warning before deactivating (D-82). */
+  pendingInProgress: number;
+};
+export const ROLE_LABELS: Record<Role, string> = {
+  ADMIN: "Administrador",
+  SUPERVISOR: "Supervisor",
+  USUARIO: "Técnico",
+  CLIENTE: "Cliente",
+};
+export type PersonState = "all" | "active" | "inactive";
+
+/** The user list filters: by role and by state, combinable. */
+export function filterPeople(
+  people: readonly Person[],
+  role: Role | "",
+  state: PersonState,
+): Person[] {
+  return people.filter(
+    (person) =>
+      (!role || person.role === role) &&
+      (state === "all" || (state === "active") === person.active),
+  );
+}
+
+/** Rule 3: at least 12 characters, and both fields equal. The server checks it is not the current one. */
+export const MIN_PASSWORD = 12;
+export function passwordProblem(next: string, repeated: string): string {
+  if (next.length < MIN_PASSWORD) return "La contraseña nueva tiene que tener 12 caracteres como mínimo.";
+  if (next !== repeated) return "Las dos contraseñas no coinciden.";
+  return "";
+}
+
+/** Rule 7 (D-24): optional, up to 30 characters of digits, spaces, +, - and parentheses. */
+export function phoneProblem(phone: string): string {
+  const value = phone.trim();
+  return !value || /^[0-9 +()-]{1,30}$/.test(value)
+    ? ""
+    : "El teléfono admite hasta 30 caracteres: dígitos, espacios, +, - y paréntesis.";
+}
+
+/** D-85: the status filter offers each role only the states it can see. Technicians and customers never see invoiced tasks. */
+export function visibleStatuses(role: Role): string[] {
+  return STAGES.map((stage) => stage.status as string).filter(
+    (status) => status !== "FACTURADO" || isOperator(role),
+  );
+}
+
+/** Board filter by person (D-86): only the ADMIN may filter by an inactive one, whose tasks were kept. */
+export function personOptions(operators: readonly Operator[], role: Role): Operator[] {
+  return operators.filter((person) => person.active !== false || role === "ADMIN");
+}
+
+/** Only active people are offered for assignment (rule 5). */
+export function assignable(operators: readonly Operator[]): Operator[] {
+  return operators.filter((person) => person.active !== false);
+}
 export type Assignee = { id: string; name: string; confirmed: boolean };
 export type Task = {
   id: string;

@@ -45,7 +45,14 @@ export function useWorkspaceData(account: Account) {
           read<Task[]>("/api/tasks"),
           read<Project[]>("/api/projects"),
           read<Client[]>("/api/clients"),
-          operator ? read<Operator[]>("/api/operators") : Promise.resolve([]),
+          // D-86: the ADMIN also gets inactive people, to filter the board by them; nobody assigns them.
+          operator
+            ? read<Operator[]>(
+                account.role === "ADMIN"
+                  ? "/api/operators?includeInactive=true"
+                  : "/api/operators",
+              )
+            : Promise.resolve([]),
         ]);
       if (signal?.aborted) return;
       setTasks(nextTasks);
@@ -54,7 +61,7 @@ export function useWorkspaceData(account: Account) {
       setOperators(nextOperators);
       setHasLoaded(true);
     },
-    [operator],
+    [operator, account.role],
   );
 
   useEffect(() => {
@@ -177,6 +184,7 @@ export function useWorkspaceData(account: Account) {
     mutate,
     mutationError,
     dismissNotice: () => setNotice(null),
+    announce: (text: string) => setNotice({ kind: "success", text }),
   };
 }
 export type WorkspaceData = ReturnType<typeof useWorkspaceData>;

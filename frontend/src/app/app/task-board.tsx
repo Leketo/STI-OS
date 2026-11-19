@@ -51,8 +51,11 @@ import {
   isOpen,
   isOperator,
   MAX_PHOTOS,
+  assignable,
+  personOptions,
   stageLabel,
   STAGES,
+  visibleStatuses,
   type Account,
   type Detail,
   type Task,
@@ -65,6 +68,9 @@ type Props = {
   data: WorkspaceData;
   projectFilter: string;
   onProjectFilter: (id: string) => void;
+  /** Kept by the workspace so "Ver sus tareas" in the user list can open the board on one person (R-04). */
+  personFilter: string;
+  onPersonFilter: (id: string) => void;
 };
 type PendingAction = {
   task: Task;
@@ -83,6 +89,8 @@ export function TaskBoard({
   data,
   projectFilter,
   onProjectFilter,
+  personFilter,
+  onPersonFilter: setPersonFilter,
 }: Props) {
   const { tasks, projects, clients, operators, busy, loading, mutate } = data;
   const operator = isOperator(account.role);
@@ -91,7 +99,7 @@ export function TaskBoard({
     : STAGES.filter((s) => s.status !== "FACTURADO");
   const [search, setSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("");
-  const [personFilter, setPersonFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [view, setView] = useState<"board" | "list">("board");
   const [mobileStage, setMobileStage] = useState<string | null>(null);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -133,6 +141,7 @@ export function TaskBoard({
       )
         return false;
       if (projectFilter && task.projectId !== projectFilter) return false;
+      if (statusFilter && task.status !== statusFilter) return false;
       if (personFilter === "mine" && !isAssigned(task, account.id))
         return false;
       if (personFilter === "unassigned" && task.assignees.length) return false;
@@ -154,7 +163,8 @@ export function TaskBoard({
     search ||
     effectiveClient ||
     projectFilter ||
-    personFilter
+    personFilter ||
+    statusFilter
   );
 
   async function readDetail(taskId: string) {
@@ -700,9 +710,28 @@ export function TaskBoard({
           <option value="">Todos los responsables</option>
           <option value="mine">Asignadas a mí</option>
           <option value="unassigned">Sin asignar</option>
-          {operators.map((p) => (
+          {personOptions(operators, account.role).map((p) => (
             <option key={p.id} value={p.id}>
-              {p.name}
+              {p.active === false ? `${p.name} (inactiva)` : p.name}
+            </option>
+          ))}
+        </select>
+        <label className="sr-only" htmlFor="filter-status">
+          Filtrar por estado
+        </label>
+        <select
+          id="filter-status"
+          value={statusFilter}
+          disabled={!!dragId}
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            setMobileStage(e.target.value || null);
+          }}
+        >
+          <option value="">Todos los estados</option>
+          {visibleStatuses(account.role).map((status) => (
+            <option key={status} value={status}>
+              {stageLabel(status)}
             </option>
           ))}
         </select>
@@ -714,6 +743,7 @@ export function TaskBoard({
               setClientFilter("");
               onProjectFilter("");
               setPersonFilter("");
+              setStatusFilter("");
               setMobileStage(null);
             }}
           >
@@ -1205,7 +1235,7 @@ export function TaskBoard({
                   }}
                 >
                   <option value="">+ Agregar responsable</option>
-                  {operators
+                  {assignable(operators)
                     .filter(
                       (p) => !selected.assignees.some((a) => a.id === p.id),
                     )

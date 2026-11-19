@@ -65,12 +65,12 @@ function Verificar-Reescrituras([string]$manifiesto) {
     $destino = "http://127.0.0.1:$puertoBackend"
     $reglas = @((ConvertFrom-Json $manifiesto).rewrites.afterFiles)
     $faltan = @()
-    foreach ($ruta in '/api/auth/:path*', '/api/tasks/:path*', '/api/tasks', '/api/projects/:path*', '/api/projects') {
+    foreach ($ruta in '/api/auth/:path*', '/api/tasks/:path*', '/api/tasks', '/api/projects/:path*', '/api/projects', '/api/accounts/:path*', '/api/accounts') {
         $regla = $reglas | Where-Object { $_.source -eq $ruta } | Select-Object -First 1
         if (-not $regla -or -not $regla.destination.StartsWith("$destino/")) { $faltan += $ruta }
     }
     if ($faltan.Count) { throw "El manifiesto de rutas no reescribe a ${destino}: $($faltan -join ', ')" }
-    Write-Output "Reescrituras de /api/auth, /api/tasks y /api/projects hacia $destino presentes en el manifiesto"
+    Write-Output "Reescrituras de /api/auth, /api/tasks, /api/projects y /api/accounts hacia $destino presentes en el manifiesto"
 }
 
 function Existe-Contenedor([string]$nombre) {

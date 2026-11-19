@@ -6,6 +6,7 @@ import {
   Building2,
   ChevronRight,
   FolderKanban,
+  KeyRound,
   LayoutGrid,
   Menu,
   ShieldCheck,
@@ -15,8 +16,10 @@ import {
 import { TaskBoard } from "./task-board";
 import { AdminOnboarding } from "./admin-onboarding";
 import { LogoutButton } from "./logout-button";
-import { ThemeControl, WorkspaceMark } from "./workspace-ui";
-import { initials, type Account } from "./task-model";
+import { PasswordForm } from "./password-form";
+import { UsersView } from "./users";
+import { Panel, ThemeControl, WorkspaceMark } from "./workspace-ui";
+import { initials, ROLE_LABELS as roleLabels, type Account } from "./task-model";
 import { useWorkspaceData } from "./use-workspace-data";
 
 type View = "tasks" | "clients" | "projects" | "users";
@@ -32,12 +35,6 @@ const icons = {
   projects: FolderKanban,
   users: Users,
 };
-const roleLabels = {
-  ADMIN: "Administrador",
-  SUPERVISOR: "Supervisor",
-  USUARIO: "Técnico",
-  CLIENTE: "Cliente",
-};
 
 export function Workspace({ account }: { account: Account }) {
   const data = useWorkspaceData(account);
@@ -45,6 +42,8 @@ export function Workspace({ account }: { account: Account }) {
   const [mobileNav, setMobileNav] = useState(false);
   const sidebar = useRef<HTMLElement>(null);
   const [projectFilter, setProjectFilter] = useState("");
+  const [personFilter, setPersonFilter] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
   const [newProjectClient, setNewProjectClient] = useState("");
   const views: View[] =
     account.role === "ADMIN"
@@ -113,16 +112,22 @@ export function Workspace({ account }: { account: Account }) {
     };
   }, [account.role]);
 
-  function navigate(next: View) {
+  function navigate(next: View, person = "") {
     setView(next);
     setMobileNav(false);
     setNewProjectClient("");
+    setPersonFilter(person);
     if (data.notice?.kind === "success") data.dismissNotice();
     window.history.pushState(null, "", `#${next}`);
   }
   function openProject(id: string) {
     setProjectFilter(id);
     navigate("tasks");
+  }
+  /** R-04: the board with one person's tasks and no other filter, so it shows what the user list counted (D-84). */
+  function openPerson(id: string) {
+    setProjectFilter("");
+    navigate("tasks", id);
   }
 
   return (
@@ -210,6 +215,17 @@ export function Workspace({ account }: { account: Account }) {
               <small>{roleLabels[account.role]}</small>
             </div>
           </div>
+          <button
+            type="button"
+            className="sti-logout"
+            onClick={() => {
+              setMobileNav(false);
+              setChangingPassword(true);
+            }}
+          >
+            <KeyRound size={14} />
+            Mi contraseña
+          </button>
           <LogoutButton />
         </div>
       </aside>
@@ -259,7 +275,11 @@ export function Workspace({ account }: { account: Account }) {
               data={data}
               projectFilter={projectFilter}
               onProjectFilter={setProjectFilter}
+              personFilter={personFilter}
+              onPersonFilter={setPersonFilter}
             />
+          ) : view === "users" ? (
+            <UsersView account={account} data={data} onOpenPerson={openPerson} />
           ) : (
             <AdminOnboarding
               view={view}
@@ -274,6 +294,29 @@ export function Workspace({ account }: { account: Account }) {
             />
           )}
         </main>
+        {changingPassword && (
+          <Panel
+            title="Mi contraseña"
+            eyebrow="TU CUENTA"
+            onClose={() => setChangingPassword(false)}
+          >
+            <p className="sti-panel-intro">
+              Al guardarla se cierran tus sesiones en otros dispositivos. Esta
+              sigue abierta.
+            </p>
+            <PasswordForm
+              requireCurrent
+              submitLabel="Guardar contraseña"
+              onCancel={() => setChangingPassword(false)}
+              onDone={() => {
+                setChangingPassword(false);
+                data.announce(
+                  "Contraseña actualizada. Se cerraron tus sesiones en otros dispositivos.",
+                );
+              }}
+            />
+          </Panel>
+        )}
         <footer className="sti-footer">
           <span>
             <span className="sti-live-dot" />

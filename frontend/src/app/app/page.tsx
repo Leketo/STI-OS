@@ -1,33 +1,13 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Workspace } from "./workspace";
-import type { Account } from "./task-model";
+import { readAccount } from "./session";
 
 export const dynamic = "force-dynamic";
 
 export default async function ApplicationHome() {
-  const backend = process.env.STI_API_ORIGIN;
-  if (!backend) redirect("/login");
-  const cookie = (await cookies()).get("STI_SESSION");
-  if (!cookie) redirect("/login");
-  let account: Account | undefined;
-  let denied = false;
-  try {
-    const response = await fetch(`${backend}/api/auth/me`, {
-      headers: { Cookie: `STI_SESSION=${encodeURIComponent(cookie.value)}` },
-      cache: "no-store",
-    });
-    denied = response.status === 401 || response.status === 403;
-    if (response.ok) account = (await response.json()) as Account;
-  } catch {
-    // Treat network and invalid-response failures as service unavailability.
-  }
-  if (denied) redirect("/login");
-  if (
-    !account ||
-    typeof account.name !== "string" ||
-    typeof account.email !== "string"
-  ) {
+  const session = await readAccount();
+  if (session.state === "out") redirect("/login");
+  if (session.state === "unavailable") {
     return (
       <main className="sti-auth">
         <section className="sti-auth-card">
@@ -42,5 +22,7 @@ export default async function ApplicationHome() {
       </main>
     );
   }
-  return <Workspace account={account} />;
+  // Rule 2 (D-23): with an initial password in force, the only way on is to replace it.
+  if (session.account.mustChangePassword) redirect("/primer-ingreso");
+  return <Workspace account={session.account} />;
 }
