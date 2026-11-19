@@ -31,9 +31,13 @@ Las reglas de negocio están en [docs/definiciones-funcionales.md](docs/definici
 - Antes del segundo pase, el servidor ensayó V4 sobre una copia restaurada de los datos reales, con el mismo resultado (D-93).
 - Base: **Flyway en 4.** El migrador tardó 1,9 s y ninguna cuenta quedó con cambio obligatorio de contraseña. **Los datos son reales.**
 - Las 9 reescrituras de `/api` llegan al backend.
-- No constan los nombres de las releases nuevas.
-- No consta que el encargo 001 del servidor (vuelta atrás probada) esté cerrado.
-- HSTS: no consta cambio desde los 300 s.
+- Releases en línea (E-009):
+  - backend `20261119T183954Z-7232b9d`;
+  - frontend `20261119-7232b9d1-production` (Build ID `hw7N8WwQbv1mgeSNKD_xD`).
+- Release anterior conservada: la del corte 1.
+- **Encargo 001 del servidor ("tener a dónde volver"): CERRADO.** La vuelta atrás está ensayada y tarda unos 6 s.
+- HSTS sigue en 300 s.
+- Tareas trabadas en producción: **0**. El servidor lo midió tres veces el 19/11 (13:31, 18:11 y 18:46 UTC); no hay nada que reparar.
 
 **Pruebas:**
 - 18/11, antes del corte: [docs/informe-e2e-2026-11-18.md](docs/informe-e2e-2026-11-18.md). Suite 19/19, matriz por API 110 OK y 4 fallas.
@@ -54,18 +58,16 @@ Los defectos del 18/11 se numeran N-11 a N-18 (antes D1 a D8). Las decisiones de
    - D-102: `allowScripts` de `unrs-resolver` **no se aprueba**.
 
    N-31 (desborde de "Filtros activos" a 360–370 px) va en el corte 3.
-3. **Tareas ya trabadas en producción.** Quedaron fuera del corte. Para detectarlas sin tocar nada: [backend/scripts/consultas/tareas-trabadas.sql](backend/scripts/consultas/tareas-trabadas.sql), que es de solo lectura. Repararlas lo decide el PO.
-4. **Facturar pide confirmación** (N-18, decidido en D-15). Queda fuera del corte 1.
-5. **Decisiones abiertas**, las decide el dueño:
+3. **Facturar pide confirmación** (N-18, decidido en D-15). Queda fuera del corte 1.
+4. **Decisiones abiertas**, las decide el dueño:
    - ¿Los nombres de empresa son únicos?
    - ¿El estilo visual es el de `/demo` (lo pedido el 27/10) o el del rediseño del 29/10?
-6. **Pendientes del servidor**, que se arrastran desde el 27/10 y **no se cierran solos**:
-   - Encargo 001 del servidor: vuelta atrás probada.
+5. **Pendientes del servidor**, que se arrastran desde el 27/10 y **no se cierran solos**:
    - Subir HSTS a un año (`31536000`, sin `includeSubDomains` ni `preload`).
    - **Backup fuera del VPS.** Hoy el backup es local; si se pierde la máquina se pierden las firmas, y los datos ya son reales.
    - Analizar las dos verificaciones que fallaron en `/srv/sti-os/private/docs/20261027T041938Z/REPORT.md`.
    - Higiene que levantó la auditoría del 29/10 (`server/auditoria-servidor-2026-10-29/INFORME-GENERAL.md`, ignorado por git): sudo amplio, credenciales de prueba en `/tmp`, releases y unidades viejas habilitadas, sin monitoreo, paquetes pendientes.
-7. **Rodaja decidida pero sin empezar: rastro de uso de la interfaz.** Las preguntas abiertas son:
+6. **Rodaja decidida pero sin empezar: rastro de uso de la interfaz.** Las preguntas abiertas son:
    - ¿tabla o archivo?
    - ¿cuánto se retiene?
    - ¿qué se registra?
