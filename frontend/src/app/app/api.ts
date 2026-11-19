@@ -32,6 +32,20 @@ export async function uploadWithCsrf(path: string, file: File): Promise<Response
   });
 }
 
+/**
+ * A 401 means the session is over: it expired after 30 minutes without use, or was closed elsewhere. Nothing
+ * on this screen can succeed any more, so every read and write sends the person to sign in again (N-15)
+ * instead of showing an error over stale data.
+ */
+export function leaveIfSessionEnded(
+  response: Pick<Response, "status">,
+  go: (path: string) => void = (path) => window.location.assign(path),
+): boolean {
+  if (response.status !== 401) return false;
+  go("/login");
+  return true;
+}
+
 export function errorFor(response: Response): string {
   if (response.status === 400) return "Revisá los datos ingresados.";
   if (response.status === 404) return "La tarea ya no está disponible para tu cuenta.";

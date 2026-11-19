@@ -8,6 +8,7 @@ import {
   eventLabel,
   finishesOnRemoval,
 } from "../src/app/app/task-model.ts";
+import { leaveIfSessionEnded } from "../src/app/app/api.ts";
 const task = {
   id: "t",
   status: "POR_HACER",
@@ -161,4 +162,12 @@ test("D-26 rule 2: removing the only pending assignee finishes, and the log says
     eventLabel({ kind: "ESTADO", toStatus: "FINALIZADO", subjectId: null }),
     "Cambió a finalizadas",
   );
+});
+test("N-15: an ended session sends every read and write to the sign-in screen", () => {
+  const visited = [];
+  const go = (path) => visited.push(path);
+  assert.equal(leaveIfSessionEnded({ status: 401 }, go), true);
+  for (const status of [200, 400, 403, 404, 409, 500])
+    assert.equal(leaveIfSessionEnded({ status }, go), false);
+  assert.deepEqual(visited, ["/login"]);
 });

@@ -32,6 +32,7 @@ import {
 import {
   deviceLocation,
   errorFor,
+  leaveIfSessionEnded,
   postWithCsrf,
   sendWithCsrf,
   uploadWithCsrf,
@@ -165,6 +166,7 @@ export function TaskBoard({
         credentials: "same-origin",
         cache: "no-store",
       });
+      if (leaveIfSessionEnded(response)) return;
       if (!response.ok) throw new Error(errorFor(response));
       const detail = (await response.json()) as Detail;
       if (request === detailRequest.current) setOpened(detail);

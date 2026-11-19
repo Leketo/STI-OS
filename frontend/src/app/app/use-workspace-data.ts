@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { errorFor } from "./api";
+import { errorFor, leaveIfSessionEnded } from "./api";
 import {
   isOperator,
   type Account,
@@ -36,6 +36,7 @@ export function useWorkspaceData(account: Account) {
           cache: "no-store",
           signal,
         });
+        if (leaveIfSessionEnded(response)) throw new SessionEnded();
         if (!response.ok) throw new Error(errorFor(response));
         return response.json() as Promise<T>;
       }
@@ -61,6 +62,7 @@ export function useWorkspaceData(account: Account) {
     Promise.resolve()
       .then(() => load(controller.signal))
       .catch((error) => {
+        if (error instanceof SessionEnded) return;
         if (!controller.signal.aborted)
           setNotice({
             kind: "error",
@@ -85,7 +87,8 @@ export function useWorkspaceData(account: Account) {
     try {
       await load();
       refreshRequired.current = false;
-    } catch {
+    } catch (error) {
+      if (error instanceof SessionEnded) return;
       setNotice({
         kind: "error",
         text: "No se pudieron actualizar los datos. Intentá nuevamente.",
@@ -117,6 +120,7 @@ export function useWorkspaceData(account: Account) {
     setNotice(null);
     try {
       const response = await write();
+      if (leaveIfSessionEnded(response)) return false;
       if (!response.ok) {
         mutationError.current = failure(response);
         setNotice({ kind: "error", text: mutationError.current });
@@ -139,7 +143,8 @@ export function useWorkspaceData(account: Account) {
       setNotice({ kind: "success", text: success });
       try {
         await load();
-      } catch {
+      } catch (error) {
+        if (error instanceof SessionEnded) return true;
         refreshRequired.current = true;
         setNotice({
           kind: "error",
@@ -175,3 +180,6 @@ export function useWorkspaceData(account: Account) {
   };
 }
 export type WorkspaceData = ReturnType<typeof useWorkspaceData>;
+
+/** Thrown by a read after the redirect to sign in has started; nothing else should be shown. */
+class SessionEnded extends Error {}
