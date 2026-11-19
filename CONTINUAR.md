@@ -20,16 +20,20 @@ Las reglas de negocio están en [docs/definiciones-funcionales.md](docs/definici
 ## Estado al 19/11/2026
 
 **Código:**
-- **Corte 1, "Tareas que no se traban" (ENCARGO-DEV-001 v2):** se entrega como `v0.1.1-candidato.1`. Informe: [docs/informe-corte-1-2026-11-19.md](docs/informe-corte-1-2026-11-19.md). Corrige N-11 a N-17 y aplica D-26. No migra la base (Flyway sigue en 3). **No está publicado**: cerrar el corte no autoriza el pase.
-- **Corte 2, "Usuarios y contraseñas" (ENCARGO-DEV-002):** se entrega como `v0.2.0-candidato.1`. Informe: [docs/informe-corte-2-2026-11-19.md](docs/informe-corte-2-2026-11-19.md). Pantalla Usuarios, contraseña inicial generada por el sistema, primer ingreso, "Mi contraseña", filtro de estado. **Trae la migración V4** (solo agrega) y la reescritura `/api/accounts/:path*`. **Aceptado por el PO (E-007)**; QA 0/16. No está publicado.
+- **Corte 1, "Tareas que no se traban" (ENCARGO-DEV-001 v2):** se entrega como `v0.1.1-candidato.1`. Informe: [docs/informe-corte-1-2026-11-19.md](docs/informe-corte-1-2026-11-19.md). Corrige N-11 a N-17 y aplica D-26. No migra la base. **Publicado** el 19/11 a las 18:15 UTC (E-008).
+- **Corte 2, "Usuarios y contraseñas" (ENCARGO-DEV-002):** se entrega como `v0.2.0-candidato.1`. Informe: [docs/informe-corte-2-2026-11-19.md](docs/informe-corte-2-2026-11-19.md). Pantalla Usuarios, contraseña inicial generada por el sistema, primer ingreso, "Mi contraseña", filtro de estado. **Trae la migración V4** (solo agrega) y la reescritura `/api/accounts/:path*`. **Aceptado por el PO (E-007). Publicado** el 19/11 a las 18:50 UTC (E-008).
 - Cada corte trabaja en su rama (el 2 en `feat/usuarios-y-contrasenas`); `main` avanza solo por fast-forward.
 
-**Producción** (`https://app.stisistemas.com`), según la medición del agente de servidor del 19/11:
-- Frontend: release `20261030-826d42a3-production`, compilado de `826d42a`, en loopback `:3006`. **El rediseño Kanban está desplegado.** Su código es idéntico al de `main` en `60115ab`.
-- Backend: release `20261027T024057Z`. **No consta de qué commit se compiló.**
-- Base: Flyway en 3. **Los datos son reales** (3 cuentas, 7 clientes, 17 proyectos y 7 tareas; confirmado por el dueño el 19/11).
-- **No hay vuelta atrás probada:** producción está congelada hasta que el servidor cierre su encargo 001.
-- HSTS sigue en 300 s.
+**Producción** (`https://app.stisistemas.com`), según lo que informó el PO el 19/11 (E-008). El desarrollo no lo verificó: no toca el servidor.
+- Dos pases el 19/11, en el orden de D-92:
+  - `v0.1.1-candidato.1` (`c8b36fa`) a las 18:15 UTC;
+  - `v0.2.0-candidato.1` (`7232b9d`) a las 18:50 UTC. **Es lo que corre hoy.**
+- Antes del segundo pase, el servidor ensayó V4 sobre una copia restaurada de los datos reales, con el mismo resultado (D-93).
+- Base: **Flyway en 4.** El migrador tardó 1,9 s y ninguna cuenta quedó con cambio obligatorio de contraseña. **Los datos son reales.**
+- Las 9 reescrituras de `/api` llegan al backend.
+- No constan los nombres de las releases nuevas.
+- No consta que el encargo 001 del servidor (vuelta atrás probada) esté cerrado.
+- HSTS: no consta cambio desde los 300 s.
 
 **Pruebas:**
 - 18/11, antes del corte: [docs/informe-e2e-2026-11-18.md](docs/informe-e2e-2026-11-18.md). Suite 19/19, matriz por API 110 OK y 4 fallas.
@@ -40,11 +44,14 @@ Las reglas de negocio están en [docs/definiciones-funcionales.md](docs/definici
 
 Los defectos del 18/11 se numeran N-11 a N-18 (antes D1 a D8). Las decisiones del PO usan la serie D-NN; los defectos propios del desarrollo, DEV-NN.
 
-1. **QA de los cortes 1 y 2.** Publicación según D-92: primero `v0.1.1-candidato.1`, después `v0.2.0-candidato.1`, en dos pases. Antes del segundo, el servidor ensaya V4 sobre una copia restaurada de los datos reales (D-93). La vuelta atrás a v0.1.1 tiene los dos límites escritos en el informe del corte 2 (CA-25). El pase lo hace el agente de servidor desde la etiqueta.
-2. **Corte 2B, sin encargo todavía:**
+1. **QA de los cortes 1 y 2:** 0/11 y 0/16. Empieza la noche del 19/11. Los dos cortes ya están publicados. Si hiciera falta volver a v0.1.1, esa vuelta tiene los dos límites escritos en el informe del corte 2 (CA-25).
+2. **Corte 2B, sin encargo todavía. No se empieza:**
    - N-30, límite de intentos fallidos de ingreso;
    - N-32, texto propio del panel tras restablecer;
-   - actualizar el doble de API `frontend/scripts/ui-fixture-server.mjs`.
+   - actualizar el doble de API `frontend/scripts/ui-fixture-server.mjs`;
+   - D-101, que el JAR diga de qué commit salió;
+   - N-35, que el migrador lea la contraseña del directorio de credenciales y no de una variable de entorno;
+   - D-102: `allowScripts` de `unrs-resolver` **no se aprueba**.
 
    N-31 (desborde de "Filtros activos" a 360–370 px) va en el corte 3.
 3. **Tareas ya trabadas en producción.** Quedaron fuera del corte. Para detectarlas sin tocar nada: [backend/scripts/consultas/tareas-trabadas.sql](backend/scripts/consultas/tareas-trabadas.sql), que es de solo lectura. Repararlas lo decide el PO.
