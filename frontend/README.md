@@ -22,6 +22,15 @@ STI_API_ORIGIN=http://127.0.0.1:8080 npm run dev
 
 ## Comprobaciones
 
+La versión de Node es la del servidor, **24.22.1** (`.nvmrc` y `engines` en `package.json`). En la PC de desarrollo no se instala: la evidencia de una entrega sale de un contenedor con esa versión fija.
+
+```powershell
+./backend/scripts/ensayo.ps1 -Accion Interfaz      # build, lint, tipos, test:ui y npm audit con Node 24.22.1
+./backend/scripts/ensayo.ps1 -Accion Levantar      # base, backend y esta interfaz servida desde el mismo contenedor
+```
+
+Los comandos de adentro son los de siempre:
+
 ```sh
 npm run lint
 npm run typecheck

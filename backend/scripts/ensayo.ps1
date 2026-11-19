@@ -3,18 +3,25 @@ Entorno efímero de ensayo para STI-OS: la base en un contenedor PostgreSQL de l
 producción (18.6 en el VPS), la aplicación real fuera de Docker (java -jar y Next), y un Bajar que deja
 todo limpio. Nunca toca la base de desarrollo persistente (output/backend-local).
 
-  ./backend/scripts/ensayo.ps1 -Accion Levantar [-Compilar] [-Frontend prod|dev|ninguno]
+  ./backend/scripts/ensayo.ps1 -Accion Levantar [-Compilar] [-Frontend contenedor|prod|dev|ninguno]
   ./backend/scripts/ensayo.ps1 -Accion Estado
   ./backend/scripts/ensayo.ps1 -Accion Bajar
   ./backend/scripts/ensayo.ps1 -Accion Suite      # tests de integración contra su propio contenedor
+  ./backend/scripts/ensayo.ps1 -Accion Interfaz   # build, lint, tipos, test:ui y npm audit con Node 24.22.1
+
+La interfaz de una entrega se compila y se prueba en un contenedor con Node 24.22.1, la versión del servidor
+(imagen fija node:24.22.1-bookworm-slim, backend/scripts/ensayo/frontend.Dockerfile). En la PC no se instala
+Node 24. -Frontend contenedor sirve esa misma imagen; prod y dev usan el Node de la PC y no valen como evidencia.
 
 Puertos, todos en 127.0.0.1: base de ensayo 5434, base de la suite 5433, backend 8099, frontend 3000.
 Secretos generados al momento en output/ensayo/secretos.json (fuera de Git); Bajar los borra.
 #>
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('Levantar', 'Bajar', 'Estado', 'Suite')][string]$Accion,
-    [ValidateSet('prod', 'dev', 'ninguno')][string]$Frontend = 'prod',
+    [Parameter(Mandatory = $true)][ValidateSet('Levantar', 'Bajar', 'Estado', 'Suite', 'Interfaz')][string]$Accion,
+    [ValidateSet('contenedor', 'prod', 'dev', 'ninguno')][string]$Frontend = 'contenedor',
     [switch]$Compilar,
+    # 1: la interfaz se compila con las variables con las que Next detecta un agente (CA-01).
+    [ValidateSet('0', '1')][string]$Agente = '1',
     [string]$JavaHome = 'C:/Program Files/Java/jdk-21',
     [string]$Imagen = 'postgres:18.6'
 )
@@ -33,8 +40,22 @@ $puertoEnsayo = 5434
 $puertoSuite = 5433
 $puertoBackend = 8099
 $puertoFrontend = 3000
+$contFrontend = 'sti-ensayo-frontend'
+$imagenFrontend = 'sti-ensayo-frontend:local'
+$dirEnsayo = Join-Path $PSScriptRoot 'ensayo'
 
 function Nuevo-Secreto { [guid]::NewGuid().ToString('N') }
+
+# Compila la interfaz en la imagen de Node 24.22.1. Un build que termina con error no crea la imagen.
+function Construir-Interfaz([string]$log) {
+    $front = Join-Path $repoRoot 'frontend'
+    & docker build --progress=plain -f (Join-Path $dirEnsayo 'frontend.Dockerfile') `
+        --build-arg "STI_API_ORIGIN=http://127.0.0.1:$puertoBackend" --build-arg "AGENTE=$Agente" `
+        -t $imagenFrontend $front *> $log
+    if ($LASTEXITCODE -ne 0) { throw "La compilación de la interfaz falló ($log)" }
+    $v = (& docker run --rm $imagenFrontend cat /node-version.txt) -join ''
+    Write-Output "Interfaz compilada con Node $($v.Trim()) en $imagenFrontend (agente=$Agente)"
+}
 
 function Existe-Contenedor([string]$nombre) {
     $found = & docker ps -a --filter "name=^/$nombre$" --format '{{.Names}}'
@@ -169,7 +190,20 @@ switch ($Accion) {
                 $front = Join-Path $repoRoot 'frontend'
                 # STI_API_ORIGIN se resuelve al compilar (rewrites) y al correr (/app): tiene que estar en ambos.
                 $env:STI_API_ORIGIN = "http://127.0.0.1:$puertoBackend"
-                if ($Frontend -eq 'prod') {
+                if ($Frontend -eq 'contenedor') {
+                    if (Existe-Contenedor $contFrontend) { throw "El contenedor $contFrontend ya existe. Corré -Accion Bajar primero." }
+                    Construir-Interfaz (Join-Path $root 'logs/frontend-build.log')
+                    # En el contenedor, 127.0.0.1:8099 es un puente (ensayo/relay.mjs) hacia el backend del host.
+                    & docker run -d --name $contFrontend -p "127.0.0.1:${puertoFrontend}:3000" `
+                        -e PORT=3000 -e HOSTNAME=0.0.0.0 -e "STI_API_ORIGIN=http://127.0.0.1:$puertoBackend" `
+                        -v "${dirEnsayo}:/ensayo:ro" $imagenFrontend `
+                        sh -c "node /ensayo/relay.mjs $puertoBackend & exec node .next/standalone/server.js" | Out-Null
+                    if ($LASTEXITCODE -ne 0) { throw "docker run falló para $contFrontend" }
+                    $pids.frontendModo = 'contenedor'; $pids.frontendContenedor = $contFrontend
+                    [System.IO.File]::WriteAllText($pidFile, ($pids | ConvertTo-Json))
+                    $code = Esperar-Http "http://127.0.0.1:$puertoFrontend/login" 120
+                    Write-Output "Frontend (contenedor $contFrontend) en http://127.0.0.1:$puertoFrontend, /login $code"
+                } elseif ($Frontend -eq 'prod') {
                     Push-Location $front
                     try {
                         $inicio = Get-Date
@@ -198,10 +232,12 @@ switch ($Accion) {
                         -ArgumentList '/c', "npx next dev -H 127.0.0.1 -p $puertoFrontend" `
                         -RedirectStandardOutput (Join-Path $root 'logs/frontend.out.log') -RedirectStandardError (Join-Path $root 'logs/frontend.err.log')
                 }
-                $pids.frontend = $f.Id; $pids.frontendModo = $Frontend
-                [System.IO.File]::WriteAllText($pidFile, ($pids | ConvertTo-Json))
-                $code = Esperar-Http "http://127.0.0.1:$puertoFrontend/login" 120
-                Write-Output "Frontend ($Frontend) PID $($f.Id) en http://127.0.0.1:$puertoFrontend, /login $code"
+                if ($Frontend -ne 'contenedor') {
+                    $pids.frontend = $f.Id; $pids.frontendModo = $Frontend
+                    [System.IO.File]::WriteAllText($pidFile, ($pids | ConvertTo-Json))
+                    $code = Esperar-Http "http://127.0.0.1:$puertoFrontend/login" 120
+                    Write-Output "Frontend ($Frontend) PID $($f.Id) en http://127.0.0.1:$puertoFrontend, /login $code"
+                }
             }
         } finally {
             foreach ($n in $names) { [Environment]::SetEnvironmentVariable($n, $prev[$n], 'Process') }
@@ -209,8 +245,10 @@ switch ($Accion) {
         Write-Output "Credenciales del ADMIN de ensayo: $secretsFile"
     }
     'Estado' {
-        $c = & docker ps -a --filter "name=^/$contEnsayo$" --format '{{.Status}}'
-        Write-Output "Contenedor ${contEnsayo}: $(if ($c) { $c } else { 'no existe' })"
+        foreach ($nombre in $contEnsayo, $contFrontend) {
+            $c = & docker ps -a --filter "name=^/$nombre$" --format '{{.Status}}'
+            Write-Output "Contenedor ${nombre}: $(if ($c) { $c } else { 'no existe' })"
+        }
         if (Test-Path -LiteralPath $pidFile) {
             $pids = Get-Content -LiteralPath $pidFile -Raw | ConvertFrom-Json
             foreach ($k in 'backend', 'frontend') {
@@ -227,13 +265,32 @@ switch ($Accion) {
             foreach ($k in 'frontend', 'backend') { if ($pids.$k) { Matar-Arbol ([int]$pids.$k) } }
             Remove-Item -LiteralPath $pidFile
         }
-        foreach ($c in $contEnsayo, $contSuite) { if (Existe-Contenedor $c) { & docker rm -f $c | Out-Null; Write-Output "Contenedor $c borrado" } }
+        foreach ($c in $contFrontend, $contEnsayo, $contSuite) { if (Existe-Contenedor $c) { & docker rm -f $c | Out-Null; Write-Output "Contenedor $c borrado" } }
         if (Test-Path -LiteralPath $secretsFile) { Remove-Item -LiteralPath $secretsFile; Write-Output 'Secretos borrados' }
         foreach ($j in Get-ChildItem -Path $root -Filter '*.jar' -ErrorAction SilentlyContinue) { Remove-Item -LiteralPath $j.FullName }
         foreach ($port in $puertoBackend, $puertoFrontend) {
             $l = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
             Write-Output "Puerto ${port}: $(if ($l) { "TODAVÍA OCUPADO por PID $($l[0].OwningProcess)" } else { 'libre' })"
         }
+    }
+    'Interfaz' {
+        # Todo dentro de la imagen de Node 24.22.1; nada usa el Node de la PC.
+        $logs = Join-Path $root 'logs'
+        New-Item -ItemType Directory -Force -ErrorAction Stop -Path $logs | Out-Null
+        Construir-Interfaz (Join-Path $logs 'interfaz-build.log')
+        $fallas = @()
+        foreach ($check in 'lint', 'typecheck', 'test:ui') {
+            $log = Join-Path $logs "interfaz-$($check.Replace(':', '-')).log"
+            & docker run --rm $imagenFrontend npm run $check *> $log
+            if ($LASTEXITCODE -eq 0) { Write-Output "npm run ${check}: OK" } else { $fallas += $check; Write-Output "npm run ${check}: FALLA ($log)" }
+        }
+        $audit = & docker run --rm -v "${dirEnsayo}:/ensayo:ro" $imagenFrontend `
+            sh -c 'npm audit --json > /tmp/audit.json; node /ensayo/audit-resumen.mjs /tmp/audit.json'
+        $auditCode = $LASTEXITCODE
+        $audit | Set-Content -Encoding UTF8 (Join-Path $logs 'interfaz-audit.txt')
+        $audit | ForEach-Object { Write-Output "npm audit: $_" }
+        if ($auditCode -ne 0) { $fallas += 'npm audit (next)' }
+        if ($fallas.Count) { throw "Comprobaciones de la interfaz con falla: $($fallas -join ', ')" }
     }
     'Suite' {
         # Se corre sola: dos Maven contra la misma base dan errores falsos.
