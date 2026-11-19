@@ -14,6 +14,12 @@
 // Changes against the 18/11 run, each one forced by a rule or by the script itself, never to make a row pass:
 // - Section 6 follows D-26 (19/11): starting without assignees, removing the only pending assignee and removing
 //   the last assignee in progress are now rules with an expected answer, no longer observations.
+// - Corte 2 (ENCARGO-DEV-002, D-23): the ADMIN no longer sends a password. Each fake account takes the initial
+//   password the system draws, signs in once and replaces it with the run's random one, as the first sign-in
+//   screen does. The row "Cuenta con contraseña de 11 caracteres" (400) has no object now: a password sent on
+//   creation is ignored. It is replaced by "Alta con contraseña escrita por el ADMIN" (201, and that password does
+//   not open the account). Section 9 adds every account operation with the four roles and without a session.
+//   Because x1 now exists, "SUPERVISOR ve operadores" expects 5 people (was 4), and also that none is a CLIENTE.
 // - Concurrency runs 10 rounds, as the encargo asks of the suite (18/11: 8).
 // - Technician 2 signs in again before the board seed: section 7 expires its sessions on purpose, and on 18/11
 //   that left part of the board to a separate fix-up script.
@@ -54,7 +60,7 @@ class Session {
     const buf = Buffer.from(await res.arrayBuffer());
     let json = null;
     if ((res.headers.get('content-type') ?? '').includes('json') && buf.length) { try { json = JSON.parse(buf.toString()); } catch {} }
-    return { status: res.status, json, bytes: buf, type: res.headers.get('content-type') };
+    return { status: res.status, json, bytes: buf, type: res.headers.get('content-type'), cacheControl: res.headers.get('cache-control') };
   }
   async refreshCsrf() {
     const res = await fetch(BASE + '/api/auth/csrf', { headers: this.cookies.size ? { cookie: this.cookieHeader() } : {} });
@@ -132,6 +138,7 @@ section = '0 Salud y autenticación';
 const admin = new Session('ADMIN');
 check('Login admin bootstrap', 'ADMIN', 204, await admin.login(creds.adminEmail.toUpperCase(), creds.adminPassword), 'correo en mayúsculas');
 check('GET /api/auth/me', 'ADMIN', 'ADMIN', (await admin.get('/api/auth/me')).json?.role);
+check('Admin existente sin cambio obligatorio', 'ADMIN', false, (await admin.get('/api/auth/me')).json?.mustChangePassword, 'D-78, mismo criterio para el bootstrap');
 
 // ---------- 1. seed ----------
 section = '1 Datos falsos (carga)';
@@ -141,7 +148,19 @@ const cB = await mk('/api/clients', { name: 'Hotel Demo SRL' });
 const pA1 = await mk('/api/projects', { clientId: cA.id, name: 'Torre Norte — CCTV' });
 const pA2 = await mk('/api/projects', { clientId: cA.id, name: 'Obrador — cableado estructurado' });
 const pB1 = await mk('/api/projects', { clientId: cB.id, name: 'Lobby — sonido ambiental' });
-const acct = async (name, email, role, clientId = null) => ({ ...(await mk('/api/accounts', { name, email, password: FAKE_PASSWORD, role, clientId })), password: FAKE_PASSWORD });
+// D-23: the system draws the initial password; the person replaces it on the first sign-in.
+const firstSignIn = async (email, initial, chosen) => {
+  const s = new Session(email);
+  const login = await s.login(email, initial);
+  const change = (await s.post('/api/auth/password', { newPassword: chosen })).status;
+  await s.raw('POST', '/api/auth/logout');
+  return `${login} ${change}`;
+};
+const acct = async (name, email, role, clientId = null) => {
+  const created = await mk('/api/accounts', { name, email, role, clientId });
+  check('Alta y primer ingreso con la contraseña inicial', role, '204 204', await firstSignIn(email, created.initialPassword, FAKE_PASSWORD));
+  return { ...created.account, password: FAKE_PASSWORD };
+};
 const sup = await acct('Sofía Supervisora', 'supervisora@example.invalid', 'SUPERVISOR');
 const t1 = await acct('Tomás Técnico', 'tecnico1@example.invalid', 'USUARIO');
 const t2 = await acct('Teresa Técnica', 'tecnico2@example.invalid', 'USUARIO');
@@ -150,10 +169,15 @@ const clB = await acct('Hugo Cliente (Hotel)', 'cliente.hotel@example.invalid', 
 observe('Carga: 2 clientes, 3 proyectos, 5 cuentas', 'ADMIN', 'creado');
 
 section = '1b Validaciones de alta';
-check('Cuenta con contraseña de 11 caracteres', 'ADMIN', 400, (await admin.post('/api/accounts', { name: 'X', email: 'x1@example.invalid', password: '12345678901', role: 'USUARIO' })).status);
-check('Cuenta CLIENTE sin empresa', 'ADMIN', 400, (await admin.post('/api/accounts', { name: 'X', email: 'x2@example.invalid', password: FAKE_PASSWORD, role: 'CLIENTE' })).status);
-check('Cuenta USUARIO con empresa', 'ADMIN', 400, (await admin.post('/api/accounts', { name: 'X', email: 'x3@example.invalid', password: FAKE_PASSWORD, role: 'USUARIO', clientId: cA.id })).status);
-check('Correo duplicado (distinto caso)', 'ADMIN', 409, (await admin.post('/api/accounts', { name: 'X', email: 'TECNICO1@example.invalid', password: FAKE_PASSWORD, role: 'USUARIO' })).status);
+{
+  const typed = 'Escrita-' + crypto.randomBytes(9).toString('base64url');
+  const r1 = await admin.post('/api/accounts', { name: 'X', email: 'x1@example.invalid', password: typed, role: 'USUARIO' });
+  check('Alta con contraseña escrita por el ADMIN', 'ADMIN', 201, r1.status, 'D-23: la contraseña enviada se ignora');
+  check('La contraseña escrita por el ADMIN no abre la cuenta', 'anónimo', 401, await new Session('x1').login('x1@example.invalid', typed));
+}
+check('Cuenta CLIENTE sin empresa', 'ADMIN', 400, (await admin.post('/api/accounts', { name: 'X', email: 'x2@example.invalid', role: 'CLIENTE' })).status);
+check('Cuenta USUARIO con empresa', 'ADMIN', 400, (await admin.post('/api/accounts', { name: 'X', email: 'x3@example.invalid', role: 'USUARIO', clientId: cA.id })).status);
+check('Correo duplicado (distinto caso)', 'ADMIN', 409, (await admin.post('/api/accounts', { name: 'X', email: 'TECNICO1@example.invalid', role: 'USUARIO' })).status);
 check('Proyecto con empresa inexistente', 'ADMIN', 400, (await admin.post('/api/projects', { clientId: '00000000-0000-0000-0000-000000000000', name: 'X' })).status);
 check('Cliente con nombre vacío', 'ADMIN', 400, (await admin.post('/api/clients', { name: '   ' })).status);
 const dupClient = await admin.post('/api/clients', { name: 'Constructora Ficticia SA' });
@@ -167,13 +191,17 @@ const role = (k) => S[k].acc.role;
 section = '1c Permisos de alta';
 check('SUPERVISOR crea cliente', 'SUPERVISOR', 403, (await S.sup.post('/api/clients', { name: 'X' })).status);
 check('SUPERVISOR crea proyecto', 'SUPERVISOR', 403, (await S.sup.post('/api/projects', { clientId: cA.id, name: 'X' })).status);
-check('SUPERVISOR crea cuenta', 'SUPERVISOR', 403, (await S.sup.post('/api/accounts', { name: 'X', email: 'x9@example.invalid', password: FAKE_PASSWORD, role: 'USUARIO' })).status);
+check('SUPERVISOR crea cuenta', 'SUPERVISOR', 403, (await S.sup.post('/api/accounts', { name: 'X', email: 'x9@example.invalid', role: 'USUARIO' })).status);
 check('USUARIO lista operadores', 'USUARIO', 403, (await S.t1.get('/api/operators')).status);
 check('CLIENTE lista operadores', 'CLIENTE', 403, (await S.clA.get('/api/operators')).status);
 check('CLIENTE ve solo su empresa', 'CLIENTE', 1, (await S.clA.get('/api/clients')).json?.length);
 check('CLIENTE ve solo sus proyectos', 'CLIENTE', 2, (await S.clA.get('/api/projects')).json?.length);
 check('CLIENTE pide proyecto ajeno', 'CLIENTE', 404, (await S.clA.get(`/api/projects/${pB1.id}`)).status);
-check('SUPERVISOR ve operadores (sin CLIENTE)', 'SUPERVISOR', 4, (await S.sup.get('/api/operators')).json?.length, 'admin+sup+2 técnicos');
+{
+  const ops = (await S.sup.get('/api/operators')).json ?? [];
+  check('SUPERVISOR ve operadores (sin CLIENTE)', 'SUPERVISOR', '5 0', `${ops.length} ${ops.filter((o) => o.role === 'CLIENTE').length}`,
+    'admin+sup+2 técnicos+x1 de 1b; ninguno CLIENTE. Hasta el corte 1 eran 4: x1 daba 400 y desde D-23 se crea');
+}
 
 // ---------- 2. happy path ----------
 section = '2 Ciclo completo';
@@ -417,6 +445,93 @@ const b8 = await task(S.sup, pA2.id, 'Montaje de soporte de TV en sala de reunio
 const fin = {};
 for (const t of board) fin[t.title] = (await admin.get(`/api/tasks/${t.id}`)).json.status;
 observe('Estados del tablero sembrado', 'ADMIN', Object.entries(fin).map(([k, v]) => `${v}: ${k}`).join(' | '));
+
+// ---------- 9. accounts (corte 2): every new operation, four roles and no session ----------
+section = '9 Cuentas';
+{
+  const anon = new Session('anónimo');
+  const roles = [['ADMIN', admin], ['SUPERVISOR', S.sup], ['USUARIO', S.t1], ['CLIENTE', S.clA], ['anónimo', anon]];
+  const deny = (who, okStatus) => (who === 'ADMIN' ? okStatus : who === 'anónimo' ? 401 : 403);
+  const put = (s, id, body) => s.raw('PUT', `/api/accounts/${id}`, { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
+  const coded = (x) => `${x.status} ${x.json?.code}`;
+  const target = (await admin.post('/api/accounts', { name: 'Cuenta objetivo', email: 'objetivo@example.invalid', role: 'USUARIO' })).json.account;
+  const slug = { ADMIN: 'admin', SUPERVISOR: 'supervisor', USUARIO: 'usuario', CLIENTE: 'cliente', 'anónimo': 'anonimo' };
+  for (const [who, s] of roles) {
+    check('GET /api/accounts', who, deny(who, 200), (await s.get('/api/accounts')).status);
+    check('GET /api/accounts/{id}', who, deny(who, 200), (await s.get(`/api/accounts/${target.id}`)).status);
+    check('POST /api/accounts', who, deny(who, 201), (await s.post('/api/accounts', { name: 'Alta ' + who, email: `alta.${slug[who]}@example.invalid`, role: 'USUARIO' })).status);
+    check('PUT /api/accounts/{id}', who, deny(who, 200), (await put(s, target.id, { phone: '021 555 000' })).status);
+    check('POST /api/accounts/{id}/password-reset', who, deny(who, 200), (await s.post(`/api/accounts/${target.id}/password-reset`, {})).status);
+    check('GET /api/operators?includeInactive=true', who, deny(who, 200), (await s.get('/api/operators?includeInactive=true')).status, 'D-86');
+  }
+
+  // Own password: every role changes it with the current one and goes back to the run's password.
+  const other = 'Otra-' + crypto.randomBytes(12).toString('base64url');
+  for (const [who, s] of roles.filter(([w]) => w !== 'ADMIN')) {
+    if (who === 'anónimo') {
+      check('POST /api/auth/password', who, 401, (await s.post('/api/auth/password', { currentPassword: FAKE_PASSWORD, newPassword: other })).status);
+      continue;
+    }
+    const there = (await s.post('/api/auth/password', { currentPassword: s.acc.password, newPassword: other })).status;
+    const back = (await s.post('/api/auth/password', { currentPassword: other, newPassword: s.acc.password })).status;
+    check('POST /api/auth/password (ida y vuelta)', who, '204 204', `${there} ${back}`);
+  }
+  check('Cambio con la contraseña actual equivocada', 'USUARIO', '400 CONTRASENA_ACTUAL', coded(await S.t1.post('/api/auth/password', { currentPassword: 'equivocada-1234', newPassword: other })));
+  check('Cambio con 11 caracteres', 'USUARIO', '400 CONTRASENA_CORTA', coded(await S.t1.post('/api/auth/password', { currentPassword: FAKE_PASSWORD, newPassword: '12345678901' })));
+  check('Cambio a la misma contraseña', 'USUARIO', '400 CONTRASENA_IGUAL', coded(await S.t1.post('/api/auth/password', { currentPassword: FAKE_PASSWORD, newPassword: FAKE_PASSWORD })));
+
+  // Initial password in force (D-86): only csrf, me, password change and logout.
+  const created = await admin.post('/api/accounts', { name: 'Recién creada', email: 'recien@example.invalid', role: 'SUPERVISOR' });
+  check('Respuesta del alta sin caché', 'ADMIN', true, /no-store/.test(created.cacheControl ?? ''));
+  const nu = new Session('recién');
+  check('Ingreso con la contraseña inicial', 'SUPERVISOR', 204, await nu.login('recien@example.invalid', created.json.initialPassword));
+  check('Con contraseña inicial: GET /api/auth/csrf', 'SUPERVISOR', 200, (await nu.get('/api/auth/csrf')).status);
+  check('Con contraseña inicial: GET /api/auth/me', 'SUPERVISOR', true, (await nu.get('/api/auth/me')).json?.mustChangePassword);
+  for (const url of ['/api/tasks', '/api/projects', '/api/clients', '/api/operators', '/api/accounts']) {
+    check(`Con contraseña inicial: GET ${url}`, 'SUPERVISOR', '403 CAMBIO_DE_CONTRASENA', coded(await nu.get(url)));
+  }
+  check('Con contraseña inicial: POST /api/tasks', 'SUPERVISOR', '403 CAMBIO_DE_CONTRASENA', coded(await nu.post('/api/tasks', { projectId: pA1.id, title: 'no debe crearse', location: GPS })));
+  check('No se creó la tarea', 'sistema', 0, Number(sql("SELECT count(*) FROM sti.task WHERE title = 'no debe crearse'")));
+  check('Con contraseña inicial: logout', 'SUPERVISOR', 204, (await nu.raw('POST', '/api/auth/logout')).status);
+
+  // Reset: the old password stops working, open sessions end, the change is asked again.
+  await firstSignIn('objetivo@example.invalid', (await admin.post(`/api/accounts/${target.id}/password-reset`, {})).json.initialPassword, FAKE_PASSWORD);
+  const live = new Session('objetivo');
+  await live.login('objetivo@example.invalid', FAKE_PASSWORD);
+  const reset = await admin.post(`/api/accounts/${target.id}/password-reset`, {});
+  check('Restablecer', 'ADMIN', 200, reset.status);
+  check('Sesión abierta tras restablecer', 'USUARIO', 401, (await live.get('/api/auth/me')).status);
+  check('Contraseña anterior tras restablecer', 'USUARIO', 401, await new Session('x').login('objetivo@example.invalid', FAKE_PASSWORD));
+  await firstSignIn('objetivo@example.invalid', reset.json.initialPassword, FAKE_PASSWORD);
+
+  // Deactivation ends the open session on the next request; reactivation lets the person in again.
+  const open = new Session('objetivo');
+  await open.login('objetivo@example.invalid', FAKE_PASSWORD);
+  check('Desactivar', 'ADMIN', 200, (await put(admin, target.id, { active: false })).status);
+  check('Sesión abierta de la persona desactivada', 'USUARIO', 401, (await open.get('/api/tasks')).status);
+  check('Ingreso de la persona desactivada', 'USUARIO', 401, await new Session('y').login('objetivo@example.invalid', FAKE_PASSWORD));
+  check('No se ofrece para asignar', 'SUPERVISOR', false, (await S.sup.get('/api/operators')).json.some((o) => o.id === target.id));
+  check('ADMIN la ve entre los inactivos', 'ADMIN', false, (await admin.get('/api/operators?includeInactive=true')).json.find((o) => o.id === target.id)?.active);
+  check('Reactivar', 'ADMIN', 200, (await put(admin, target.id, { active: true })).status);
+  check('Ingreso tras reactivar', 'USUARIO', 204, await new Session('z').login('objetivo@example.invalid', FAKE_PASSWORD));
+
+  // Rule 6 and D-83 on oneself and on a person with open tasks.
+  const me = (await admin.get('/api/auth/me')).json;
+  check('ADMIN cambia su propio rol', 'ADMIN', '409 PROPIO_ROL', coded(await put(admin, me.id, { role: 'SUPERVISOR' })));
+  check('ADMIN se desactiva a sí mismo', 'ADMIN', '409 PROPIA_CUENTA', coded(await put(admin, me.id, { active: false })));
+  check('ADMIN restablece su propia contraseña', 'ADMIN', '409 PROPIA_CONTRASENA', coded(await admin.post(`/api/accounts/${me.id}/password-reset`, {})), 'D-83');
+  check('Pasar a CLIENTE con tareas abiertas', 'ADMIN', '409 TAREAS_ABIERTAS', coded(await put(admin, t1.id, { role: 'CLIENTE', clientId: cA.id })));
+  check('Correo en uso', 'ADMIN', '409 CORREO_EN_USO', coded(await put(admin, target.id, { email: 'TECNICO2@example.invalid' })));
+  check('Teléfono inválido', 'ADMIN', '400 TELEFONO', coded(await put(admin, target.id, { phone: '0981-ABC' })));
+
+  // Rule 10: the log names who and what, and never a password or a hash.
+  check('Bitácora sin contraseñas ni hashes', 'sistema', 0, Number(sql(`SELECT count(*) FROM sti.account_event WHERE changes::text ILIKE '%password%' OR changes::text LIKE '%$2a$%' OR strpos(changes::text, '${FAKE_PASSWORD}') > 0 OR strpos(changes::text, '${other}') > 0`)));
+  const actor = `CASE WHEN e.actor_id = e.account_id THEN 'propia' WHEN u.email = '${creds.adminEmail.toLowerCase()}' THEN 'ADMIN' ELSE 'otro' END`;
+  check('Bitácora de la cuenta objetivo (qué y quién)', 'sistema',
+    'ALTA:ADMIN,EDICION:ADMIN,RESTABLECIMIENTO:ADMIN,RESTABLECIMIENTO:ADMIN,CAMBIO_CONTRASENA:propia,RESTABLECIMIENTO:ADMIN,CAMBIO_CONTRASENA:propia,DESACTIVACION:ADMIN,ACTIVACION:ADMIN',
+    sql(`SELECT string_agg(e.kind || ':' || ${actor}, ',' ORDER BY e.occurred_at) FROM sti.account_event e JOIN sti.app_user u ON u.id = e.actor_id WHERE e.account_id = '${target.id}'`),
+    'los intentos de los otros roles no dejaron registro');
+}
 
 // ---------- output ----------
 const seed = { clients: { cA, cB }, projects: { pA1, pA2, pB1 }, accounts: { admin: { email: creds.adminEmail, note: 'password en secretos.json' }, sup, t1, t2, clA, clB }, tasks: { cicloCompleto: T.id, reapertura: R.id, anulada: C.id } };

@@ -23,6 +23,8 @@ param(
     # 1: la interfaz se compila con las variables con las que Next detecta un agente (CA-01).
     [ValidateSet('0', '1')][string]$Agente = '1',
     [string]$JavaHome = 'C:/Program Files/Java/jdk-21',
+    # Levantar: JAR web de otra versión para correr sobre la base que migró esta (CA-25: v0.1.1 contra el esquema 4).
+    [string]$JarWeb = '',
     [string]$Imagen = 'postgres:18.6'
 )
 # Continue, no Stop: en Windows PowerShell 5.1 cualquier línea que un ejecutable nativo escribe en stderr
@@ -179,6 +181,10 @@ switch ($Accion) {
         # Copia de los JAR: Windows bloquea el que está corriendo y el próximo package fallaría.
         foreach ($j in 'sti-os-backend-0.1.0-SNAPSHOT', 'sti-os-backend-0.1.0-SNAPSHOT-migrator', 'sti-os-backend-0.1.0-SNAPSHOT-bootstrap') {
             Copy-Item (Join-Path $backendRoot "target/$j.jar") (Join-Path $root "$j.jar") -Force -ErrorAction Stop
+        }
+        if ($JarWeb) {
+            Copy-Item -LiteralPath $JarWeb (Join-Path $root 'sti-os-backend-0.1.0-SNAPSHOT.jar') -Force -ErrorAction Stop
+            Write-Output "JAR web reemplazado por $JarWeb (la migración y el bootstrap son los de esta versión)"
         }
         $java = "$JavaHome/bin/java.exe"
         $names = 'STI_DB_URL', 'STI_DB_USER', 'STI_DB_PASSWORD', 'STI_MIGRATION_USER', 'STI_MIGRATION_PASSWORD',
