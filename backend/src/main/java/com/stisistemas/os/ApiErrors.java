@@ -4,6 +4,7 @@ import com.stisistemas.os.task.TaskConflict;
 import java.util.Map;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -25,6 +26,12 @@ public class ApiErrors {
     @ResponseStatus(HttpStatus.CONFLICT)
     Map<String, Object> taskConflict(TaskConflict conflict) {
         return Map.of("status", 409, "code", conflict.code(), "message", conflict.getMessage());
+    }
+
+    @ExceptionHandler(Refusal.class)
+    ResponseEntity<Map<String, Object>> refusal(Refusal refusal) {
+        return ResponseEntity.status(refusal.status()).body(Map.of(
+            "status", refusal.status().value(), "code", refusal.code(), "message", refusal.getMessage()));
     }
 
     /**

@@ -95,19 +95,26 @@ function Aprovisionar([string]$nombre, [string]$migPass, [string]$runPass) {
     Invocar-Sql $nombre 'postgres' @"
 CREATE ROLE sti_migrator LOGIN PASSWORD '$migPass';
 CREATE ROLE sti_runtime LOGIN PASSWORD '$runPass';
-CREATE DATABASE sti_os OWNER sti_migrator;
-REVOKE ALL ON DATABASE sti_os FROM PUBLIC;
-GRANT CONNECT ON DATABASE sti_os TO sti_runtime;
 "@
-    Invocar-Sql $nombre 'sti_os' @'
+    Aprovisionar-Base $nombre 'sti_os'
+}
+
+# Una base más con el mismo esquema vacío y los mismos roles (la suite prueba ahí la actualización desde el esquema 3).
+function Aprovisionar-Base([string]$nombre, [string]$db) {
+    Invocar-Sql $nombre 'postgres' @"
+CREATE DATABASE $db OWNER sti_migrator;
+REVOKE ALL ON DATABASE $db FROM PUBLIC;
+GRANT CONNECT ON DATABASE $db TO sti_runtime;
+"@
+    Invocar-Sql $nombre $db @"
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 CREATE SCHEMA sti AUTHORIZATION sti_migrator;
 GRANT USAGE ON SCHEMA sti TO sti_runtime;
 ALTER DEFAULT PRIVILEGES FOR ROLE sti_migrator IN SCHEMA sti GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sti_runtime;
 ALTER DEFAULT PRIVILEGES FOR ROLE sti_migrator IN SCHEMA sti GRANT USAGE, SELECT ON SEQUENCES TO sti_runtime;
-ALTER ROLE sti_runtime IN DATABASE sti_os SET search_path=pg_catalog,sti;
-ALTER ROLE sti_migrator IN DATABASE sti_os SET search_path=pg_catalog,sti;
-'@
+ALTER ROLE sti_runtime IN DATABASE $db SET search_path=pg_catalog,sti;
+ALTER ROLE sti_migrator IN DATABASE $db SET search_path=pg_catalog,sti;
+"@
 }
 
 function Crear-Contenedor([string]$nombre, [int]$puerto, [string]$pgPass) {
@@ -299,10 +306,12 @@ switch ($Accion) {
         # Se corre sola: dos Maven contra la misma base dan errores falsos.
         $pgPass = Nuevo-Secreto; $mig = Nuevo-Secreto; $run = Nuevo-Secreto
         Crear-Contenedor $contSuite $puertoSuite $pgPass
-        $names = 'STI_DB_URL', 'STI_DB_USER', 'STI_DB_PASSWORD', 'STI_MIGRATION_USER', 'STI_MIGRATION_PASSWORD'
+        $names = 'STI_DB_URL', 'STI_DB_USER', 'STI_DB_PASSWORD', 'STI_MIGRATION_USER', 'STI_MIGRATION_PASSWORD', 'STI_UPGRADE_DB_URL'
         $prev = @{}; foreach ($n in $names) { $prev[$n] = [Environment]::GetEnvironmentVariable($n, 'Process') }
         try {
             Aprovisionar $contSuite $mig $run
+            Aprovisionar-Base $contSuite 'sti_os_actualizacion'
+            $env:STI_UPGRADE_DB_URL = "jdbc:postgresql://127.0.0.1:$puertoSuite/sti_os_actualizacion"
             Write-Output "PostgreSQL $((& docker exec $contSuite psql -U postgres -tAc 'show server_version').Trim()) en $contSuite"
             $env:STI_DB_URL = "jdbc:postgresql://127.0.0.1:$puertoSuite/sti_os"
             $env:STI_DB_USER = 'sti_runtime'; $env:STI_DB_PASSWORD = $run

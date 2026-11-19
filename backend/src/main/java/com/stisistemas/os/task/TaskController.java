@@ -48,7 +48,7 @@ public class TaskController {
         this.uploads = uploads;
     }
 
-    record Operator(UUID id, String name, String role) {}
+    record Operator(UUID id, String name, String role, boolean active) {}
     record NewTask(UUID projectId, String title, String detail, Tasks.Location location) {}
     record NewAssignment(UUID userId) {}
     record StatusChange(String to, Tasks.Location location) {}
@@ -56,12 +56,16 @@ public class TaskController {
     record NewSignature(String signerName, String signedOn, String image, Tasks.Location location) {}
 
     @GetMapping("/api/operators")
-    List<Operator> operators(Principal principal) {
-        if (!OPERATORS.contains(accounts.active(principal.getName()).role())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        }
-        return jdbc.query("SELECT id, display_name, role FROM sti.app_user WHERE enabled AND role <> 'CLIENTE' ORDER BY display_name, id",
-            (rs, n) -> new Operator(rs.getObject("id", UUID.class), rs.getString("display_name"), rs.getString("role")));
+    List<Operator> operators(@RequestParam(defaultValue = "false") boolean includeInactive, Principal principal) {
+        var account = accounts.active(principal.getName());
+        if (!OPERATORS.contains(account.role())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        // Only active people are offered for assignment (rule 5). The ADMIN may also list the inactive ones, to
+        // filter the board by a person whose tasks were kept (D-86).
+        if (includeInactive && !account.role().equals("ADMIN")) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        return jdbc.query("SELECT id, display_name, role, enabled FROM sti.app_user WHERE role <> 'CLIENTE'"
+                + (includeInactive ? "" : " AND enabled") + " ORDER BY display_name, id",
+            (rs, n) -> new Operator(rs.getObject("id", UUID.class), rs.getString("display_name"), rs.getString("role"),
+                rs.getBoolean("enabled")));
     }
 
     @GetMapping("/api/tasks")

@@ -195,8 +195,10 @@ class FoundationTest {
         assertThat(created.statusCode()).isEqualTo(201);
         assertThat(created.body()).contains(account, COMPANY_B.toString()).doesNotContain(PASSWORD, "password_hash");
         assertThat(admin.postJson("/api/accounts", client, admin.csrf()).statusCode()).isEqualTo(409);
+        // D-23 (corte 2): the password the admin sent is ignored; the account opens with the one the system drew.
         var newClient = new Browser();
-        assertThat(newClient.post("/api/auth/login", "username=" + account + "&password=" + PASSWORD, newClient.csrf()).statusCode()).isEqualTo(204);
+        assertThat(newClient.post("/api/auth/login", "username=" + account + "&password=" + PASSWORD, newClient.csrf()).statusCode()).isEqualTo(401);
+        firstSignIn(newClient, account, JsonPath.read(created.body(), "$.initialPassword"));
         assertThat(newClient.get("/api/projects").body()).contains("Project B").doesNotContain("Project A");
         assertThat(newClient.postJson("/api/accounts", client, newClient.csrf()).statusCode()).isEqualTo(403);
     }
@@ -219,7 +221,7 @@ class FoundationTest {
         assertThat(account.statusCode()).isEqualTo(201);
         assertThat(account.body()).contains(email, clientId.toString()).doesNotContain(PASSWORD, "password_hash");
         var customer = new Browser();
-        assertThat(customer.post("/api/auth/login", "username=" + email + "&password=" + PASSWORD, customer.csrf()).statusCode()).isEqualTo(204);
+        firstSignIn(customer, email, JsonPath.read(account.body(), "$.initialPassword"));
         assertThat(customer.get("/api/clients").body()).contains("New company").doesNotContain("Synthetic A", "Synthetic B");
         assertThat(customer.get("/api/projects").body()).doesNotContain("Project A", "Project B");
         assertThat(customer.postJson("/api/clients", "{\"name\":\"Forbidden\"}", customer.csrf()).statusCode()).isEqualTo(403);
@@ -584,6 +586,13 @@ class FoundationTest {
     }
     private static UUID userId(String role) {
         return owner.queryForObject("SELECT id FROM sti.app_user WHERE email = ?", UUID.class, role + "@example.invalid");
+    }
+
+    /** Signs in with the initial password and replaces it, as the first sign-in screen does (D-23). */
+    private static void firstSignIn(Browser browser, String email, String initialPassword) throws Exception {
+        assertThat(browser.post("/api/auth/login", "username=" + email + "&password="
+            + java.net.URLEncoder.encode(initialPassword, java.nio.charset.StandardCharsets.UTF_8), browser.csrf()).statusCode()).isEqualTo(204);
+        assertThat(browser.postJson("/api/auth/password", "{\"newPassword\":\"" + UUID.randomUUID() + "\"}", browser.csrf()).statusCode()).isEqualTo(204);
     }
 
     private URI uri(String path) { return URI.create("http://127.0.0.1:" + port + path); }

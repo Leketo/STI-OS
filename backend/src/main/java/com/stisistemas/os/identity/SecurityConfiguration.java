@@ -6,15 +6,18 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import jakarta.servlet.http.HttpServletResponse;
 
 @Configuration
 public class SecurityConfiguration {
     @Bean PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(12); }
 
-    @Bean SecurityFilterChain security(HttpSecurity http) throws Exception {
+    @Bean SecurityFilterChain security(HttpSecurity http, JdbcTemplate jdbc) throws Exception {
         return http
+            .addFilterAfter(new AccountStateFilter(jdbc), AuthorizationFilter.class)
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/csrf", "/api/auth/login", "/api/health", "/error").permitAll()
                 .requestMatchers("/api/**").authenticated().anyRequest().denyAll())
