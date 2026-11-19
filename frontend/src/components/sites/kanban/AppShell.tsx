@@ -13,7 +13,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const projectId = pathname.split("/")[2];
   const isProjectRoute = pathname.startsWith("/projects/") && projectId !== "new";
 
-  if (pathname === "/login" || pathname === "/app") return <>{children}</>;
+  // The real product's screens go full screen, outside the public demo shell.
+  if (
+    pathname === "/login" ||
+    pathname === "/app" ||
+    pathname === "/primer-ingreso"
+  )
+    return <>{children}</>;
 
   return (
     <KanbanProvider>
