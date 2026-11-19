@@ -1,14 +1,17 @@
 # Stack de trabajo STI-OS
 
 Índice de entrada de este directorio. El estado del trabajo y lo que sigue están en **[CONTINUAR.md](CONTINUAR.md)**; este archivo solo orienta.
-Este directorio se copió desde `C:\dev\STI\STI-OS` el 29/10/2026. Índice actualizado el 18/11/2026.
+Este directorio se copió desde `C:\dev\STI\STI-OS` el 29/10/2026. Índice actualizado el 19/11/2026.
 
 ## Documentos
 
 | Documento | Para qué |
 |---|---|
 | [CONTINUAR.md](CONTINUAR.md) | Traspaso de sesión: estado, próximos pasos, cómo levantar, trampas. **Se lee primero.** |
-| [docs/informe-e2e-2026-11-18.md](docs/informe-e2e-2026-11-18.md) | Última prueba de punta a punta con datos falsos: matriz de reglas, hallazgos N-11 a N-18 (antes D1–D8) con archivo y línea. |
+| [CLAUDE.md](CLAUDE.md) | Reglas de trabajo del agente de desarrollo, fijadas por el PO. Si algo choca con otro documento, vale este. |
+| [coordinacion/](coordinacion/) | Registro de eventos: entregas, rectificaciones y decisiones, uno por archivo (`E-NNN-…`). |
+| [docs/informe-corte-1-2026-11-19.md](docs/informe-corte-1-2026-11-19.md) | Corte 1, "Tareas que no se traban": criterios CA-01 a CA-11 con comando, resultado y evidencia ([docs/evidencia-corte-1/](docs/evidencia-corte-1/)). |
+| [docs/informe-e2e-2026-11-18.md](docs/informe-e2e-2026-11-18.md) | Prueba de punta a punta del 18/11 con datos falsos: matriz de reglas, hallazgos N-11 a N-18 (antes D1–D8) con archivo y línea. |
 | [docs/definiciones-funcionales.md](docs/definiciones-funcionales.md) | Decisiones del cliente y preguntas abiertas. Manda sobre el relevamiento original. |
 | [docs/stack-y-plan-tecnico.md](docs/stack-y-plan-tecnico.md) | Stack elegido, fases T1/T2/T3 y seguridad. Plan del 26/10; los hashes de commit que cita son históricos. |
 | [docs/frontend-redesign.md](docs/frontend-redesign.md) | Especificación del rediseño Kanban y los arreglos posteriores. |
@@ -23,7 +26,7 @@ Este directorio se copió desde `C:\dev\STI\STI-OS` el 29/10/2026. Índice actua
 
 | Ruta | Qué es |
 |---|---|
-| `backend/` | Java 21 / Spring Boot 4.1.2, JDBC, Flyway V1–V3, sesiones en PostgreSQL. Scripts en `backend/scripts/`: `ensayo.ps1` (entorno efímero en Docker), `start-local.ps1` y `run-local.ps1` (base de desarrollo persistente), `test-local.ps1` (suite sobre un cluster temporal). |
+| `backend/` | Java 21 / Spring Boot 4.1.2, JDBC, Flyway V1–V3, sesiones en PostgreSQL. Scripts en `backend/scripts/`: `ensayo.ps1` (entorno efímero en Docker), `start-local.ps1` y `run-local.ps1` (base de desarrollo persistente), `test-local.ps1` (suite sobre un cluster temporal), `ensayo/matriz-api.mjs` (matriz de reglas por API con datos falsos) y `consultas/` (consultas de solo lectura, como `tareas-trabadas.sql`). |
 | `frontend/` | Next.js 16 / React 19. `/app` autenticado con Kanban y `/demo` pública de solo lectura. |
 | `docs/` | Documentación de producto y técnica. `docs/transcripciones/` está **fuera de Git**. |
 | `server/` | Todo lo del VPS: inventario, entrega, checklist, mensajes al agente del servidor y la auditoría del 29/10 (`auditoria-servidor-2026-10-29/`). **Fuera de Git**. |

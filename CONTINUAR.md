@@ -1,6 +1,6 @@
 # STI-OS — traspaso de sesión
 
-Actualizado: **18/11/2026**. Es el documento vivo y se lee primero. El índice de todo lo demás está en [STACK.md](STACK.md).
+Actualizado: **19/11/2026**. Es el documento vivo y se lee primero. El índice de todo lo demás está en [STACK.md](STACK.md); las reglas de trabajo, en [CLAUDE.md](CLAUDE.md); el registro de entregas y decisiones, en [coordinacion/](coordinacion/).
 La versión anterior de este archivo (25 al 27/10, con todo el detalle del despliegue en el VPS) está en git: `git show e954689:CONTINUAR.md`.
 
 ## Qué es
@@ -10,51 +10,45 @@ STI-OS es la aplicación de órdenes de servicio de STI Sistemas, una empresa de
 - **Jerarquía:** cliente → proyecto → tarea.
 - **Roles:** ADMIN, SUPERVISOR, USUARIO (técnico) y CLIENTE.
 - **Estados de una tarea:** `POR_HACER → EN_PROCESO → FINALIZADO → FACTURADO`, más `ANULADA`.
-- **Para llegar a FINALIZADO** tiene que confirmar cada asignado.
+- **Para llegar a FINALIZADO** tiene que confirmar cada asignado. Desde D-26 (19/11) una tarea no se inicia sin asignados, no se queda sin asignados en curso, y se finaliza si se quita al único pendiente.
 - **Para facturar** hace falta una firma de conformidad vigente, presencial o remota.
 - **Fotos:** 5 por tarea como máximo, JPEG o PNG, verificadas por sus bytes.
 - **Ubicación:** cada paso guarda la posición GPS o el motivo por el que no la hay.
 
 Las reglas de negocio están en [docs/definiciones-funcionales.md](docs/definiciones-funcionales.md) y las técnicas en [backend/README.md](backend/README.md).
 
-## Estado al 18/11/2026
+## Estado al 19/11/2026
 
 **Código:**
-- `main` = `60115ab`, que incluye el rediseño Kanban con temas día y noche (commits del 29 y 30/10; el PR #1 se integró el 18/11).
-- La rama de trabajo actual es `fix/ajustes-kanban`.
+- **Corte 1, "Tareas que no se traban" (ENCARGO-DEV-001 v2):** se entrega como `v0.1.1-candidato.1`. Informe: [docs/informe-corte-1-2026-11-19.md](docs/informe-corte-1-2026-11-19.md). Corrige N-11 a N-17 y aplica D-26. No migra la base (Flyway sigue en 3). **No está publicado**: cerrar el corte no autoriza el pase.
+- La rama de trabajo es `fix/ajustes-kanban`; `main` avanza solo por fast-forward.
 
-**Producción** (`https://app.stisistemas.com`), según la medición del agente de servidor del 19/11 (corrige lo que decía este documento el 18/11):
-- Frontend: release `20261030-826d42a3-production`, compilado de `826d42a`, en loopback `:3006`. **El rediseño Kanban está desplegado.** `826d42a` difiere de `main` solo en `STACK.md`.
-- Datos: 3 cuentas (1 ADMIN, 1 SUPERVISOR, 1 CLIENTE), 7 clientes, 17 proyectos y 7 tareas. No consta si son reales.
-- Sin volver a verificar desde el 27/10: backend en loopback `:8080` y PostgreSQL 18.6.
+**Producción** (`https://app.stisistemas.com`), según la medición del agente de servidor del 19/11:
+- Frontend: release `20261030-826d42a3-production`, compilado de `826d42a`, en loopback `:3006`. **El rediseño Kanban está desplegado.** Su código es idéntico al de `main` en `60115ab`.
+- Backend: release `20261027T024057Z`. **No consta de qué commit se compiló.**
+- Base: Flyway en 3. **Los datos son reales** (3 cuentas, 7 clientes, 17 proyectos y 7 tareas; confirmado por el dueño el 19/11).
+- **No hay vuelta atrás probada:** producción está congelada hasta que el servidor cierre su encargo 001.
 - HSTS sigue en 300 s.
 
-**Prueba de punta a punta del 18/11:** [docs/informe-e2e-2026-11-18.md](docs/informe-e2e-2026-11-18.md).
-- Suite 19/19 contra PG 18.6.
-- Matriz por API: 110 OK y 4 fallas.
-- Recorrido completo en Chrome con todos los roles.
+**Pruebas:**
+- 18/11, antes del corte: [docs/informe-e2e-2026-11-18.md](docs/informe-e2e-2026-11-18.md). Suite 19/19, matriz por API 110 OK y 4 fallas.
+- 19/11, corte 1: suite 25/25 contra PG 18.6 y matriz por API 120 OK y 0 fallas. Detalle y límites en el informe del corte.
 
 ## Lo próximo, en orden
 
-Los defectos del informe se renumeraron el 19/11: D1 a D8 pasan a ser **N-11 a N-18**. Las decisiones del PO usan la serie D-NN.
+Los defectos del 18/11 se numeran N-11 a N-18 (antes D1 a D8). Las decisiones del PO usan la serie D-NN; los defectos propios del desarrollo, DEV-NN.
 
-1. **Primero del próximo corte (D-17): pasar `next` de 16.4.2 a 16.4.6** (N-17, antes D7; aprobado en D-16), en un commit propio y con toda la prueba repetida. En ese mismo commit se saca de `ensayo.ps1` la excepción que deja seguir cuando `next build` sale con error: el agente de servidor compila desde etiqueta y se detiene si el build sale con código 1.
-2. **Corregir la concurrencia en el backend.** Junto con N-16 es lo que bloquea cargar datos reales. Dos confirmaciones simultáneas dejan la tarea trabada (8 de 8 vueltas), las fotos simultáneas pasan de 5, y una firma simultánea da 500 y deja un archivo huérfano. También se traba al desasignar al último pendiente. Detalle y dirección del arreglo en el informe, N-11 a N-14 (antes D1–D4). Severidad: N-11 y N-14 altas, N-12 y N-13 medias.
-3. **Interfaz:**
-   - Un 401 tiene que llevar al login (N-15, antes D5).
-   - La fecha de la firma tiene que ser la local, no UTC (N-16, antes D6). Bloquea operar con datos reales.
-   - Facturar pide confirmación (N-18, antes D8; decidido en D-15).
-4. **Decisiones:**
-   - [x] ¿Facturar pide confirmación? Sí (D-15).
-   - [x] ¿Se actualiza `next` a 16.4.6? Sí, en un commit propio y con la prueba repetida (D-16).
-   - Siguen abiertas, las decide el dueño:
-     - ¿Los nombres de empresa son únicos?
-     - ¿Cómo se gestionan las cuentas CLIENTE (listar, desactivar, cambiar contraseña)?
-     - ¿El estilo visual es el de `/demo` (lo pedido el 27/10) o el del rediseño del 29/10?
+1. **QA del corte 1** y decisión del PO sobre el pase. El pase lo hace el agente de servidor desde la etiqueta.
+2. **Tareas ya trabadas en producción.** Quedaron fuera del corte. Para detectarlas sin tocar nada: [backend/scripts/consultas/tareas-trabadas.sql](backend/scripts/consultas/tareas-trabadas.sql), que es de solo lectura. Repararlas lo decide el PO.
+3. **Facturar pide confirmación** (N-18, decidido en D-15). Queda fuera del corte 1.
+4. **Decisiones abiertas**, las decide el dueño:
+   - ¿Los nombres de empresa son únicos?
+   - ¿Cómo se gestionan las cuentas CLIENTE (listar, desactivar, cambiar contraseña)?
+   - ¿El estilo visual es el de `/demo` (lo pedido el 27/10) o el del rediseño del 29/10?
 5. **Pendientes del servidor**, que se arrastran desde el 27/10 y **no se cierran solos**:
+   - Encargo 001 del servidor: vuelta atrás probada.
    - Subir HSTS a un año (`31536000`, sin `includeSubDomains` ni `preload`).
-   - Confirmar si las 3 cuentas, 7 clientes, 17 proyectos y 7 tareas medidos el 19/11 son reales o de prueba.
-   - **Backup fuera del VPS.** Hoy el backup es local; si se pierde la máquina se pierden las firmas.
+   - **Backup fuera del VPS.** Hoy el backup es local; si se pierde la máquina se pierden las firmas, y los datos ya son reales.
    - Analizar las dos verificaciones que fallaron en `/srv/sti-os/private/docs/20261027T041938Z/REPORT.md`.
    - Higiene que levantó la auditoría del 29/10 (`server/auditoria-servidor-2026-10-29/INFORME-GENERAL.md`, ignorado por git): sudo amplio, credenciales de prueba en `/tmp`, releases y unidades viejas habilitadas, sin monitoreo, paquetes pendientes.
 6. **Rodaja decidida pero sin empezar: rastro de uso de la interfaz.** Las preguntas abiertas son:
@@ -67,16 +61,18 @@ Los defectos del informe se renumeraron el 19/11: D1 a D8 pasan a ser **N-11 a N
 
 ## Cómo levantar en local
 
-**Para probar: entorno de ensayo efímero.** Es lo recomendado y no toca nada persistente.
+**Para probar: entorno de ensayo efímero.** Es lo recomendado y no toca nada persistente. Necesita Docker; Node 24.22.1 corre en un contenedor y no se instala en la PC.
 
 ```powershell
-./backend/scripts/ensayo.ps1 -Accion Suite                    # tests contra PG 18.6 en contenedor
-./backend/scripts/ensayo.ps1 -Accion Levantar -Frontend prod  # base 5434, backend 8099, frontend 3000
-./backend/scripts/ensayo.ps1 -Accion Bajar                    # borra contenedores, secretos y libera puertos
+./backend/scripts/ensayo.ps1 -Accion Suite        # tests contra PG 18.6 en contenedor
+./backend/scripts/ensayo.ps1 -Accion Interfaz     # build, lint, tipos, test:ui y npm audit con Node 24.22.1
+./backend/scripts/ensayo.ps1 -Accion Levantar     # base 5434, backend 8099, interfaz en contenedor en 3000
+node backend/scripts/ensayo/matriz-api.mjs output/ensayo   # matriz de reglas por API con datos falsos
+./backend/scripts/ensayo.ps1 -Accion Bajar        # borra contenedores, secretos y libera puertos
 ```
 
-- El admin de ensayo y sus credenciales están en `output/ensayo/secretos.json`, que Bajar borra.
-- Los datos falsos se cargan por la API. El script de la prueba del 18/11 no está en el repo; su lógica está descrita en el informe.
+- El admin de ensayo y sus credenciales están en `output/ensayo/secretos.json`, que Bajar borra. Las cuentas falsas de la matriz reciben una contraseña al azar en cada corrida.
+- `-Frontend prod` compila la interfaz en la PC en lugar del contenedor; la evidencia de una entrega sale del contenedor.
 
 **Para desarrollar con datos que persisten:** la base de desarrollo en `output/backend-local`, PostgreSQL 15 en `:55432`.
 
@@ -92,42 +88,25 @@ $env:PORT='3021'; node .next/standalone/server.js
 - **Maven.** `ensayo.ps1` usa `./mvnw.cmd`. `start-local.ps1` y `test-local.ps1` usan el `mvn` del sistema (3.9.3, que está instalado).
 - **Windows PowerShell 5.1 y stderr.** Con `ErrorActionPreference=Stop`, cualquier línea que Maven, Mockito o docker escriben en stderr corta el script. `ensayo.ps1` usa `Continue` y revisa `$LASTEXITCODE`.
 - **Lanzar `test-local.ps1` en segundo plano** con la salida redirigida a veces muere antes de llegar a Maven y deja su cluster escuchando. Pasó el 26/10 y otra vez el 18/11. Hay que revisar `output/backend-test-*` con `pg_ctl status` y bajarlo.
-- **Procesos en segundo plano.** Si se detiene la tarea que los lanzó, se cae todo su árbol, backend incluido.
+- **Procesos en segundo plano.** Si se detiene la tarea que los lanzó, se cae todo su árbol, backend incluido. Se terminan solo por PID (DEV-02).
 - **`STI_API_ORIGIN`:**
   - se necesita **al compilar y al correr**;
   - debe ser exactamente `http://127.0.0.1:…`; `localhost` falla;
-  - hay que verificar que `rewrites.afterFiles` en `.next/routes-manifest.json` no esté vacío, sin compararlo contra un número fijo.
-- **Next 16.4.2 detecta agentes.** En ese caso:
-  - `next dev` sirve un solo pedido y se cierra;
-  - `next build` termina con código 1 **después** de compilar.
-
-  Para seguir: correr `node scripts/prepare-standalone.mjs` y servir el standalone. El aviso pide ejecutar `next upgrade`; no se ejecuta: la actualización está aprobada (D-16) y va en su propio commit (ver N-17).
+  - `ensayo.ps1` comprueba por contenido que el manifiesto traiga las reescrituras de `/api/auth`, `/api/tasks` y `/api/projects`.
+- **Detección de agentes de Next.** Con 16.4.2, `next build` terminaba con código 1 después de compilar si lo corría un agente (N-17). Con 16.4.6 el build sale 0 con las variables de agente puestas, y `ensayo.ps1` ya no tolera un build fallido. `next dev` con 16.4.6 desde un agente no se volvió a probar.
 - **Bloqueos de archivos.** Hay que parar el backend antes de `package` (Windows bloquea el JAR) y parar el standalone antes de `npm run build` (`EBUSY`). `ensayo.ps1` copia los JAR para no bloquear `target/`.
-- **Node.** El README del frontend dice Node 24; esta máquina tiene 22.19 y todo pasa.
+- **Node.** El servidor usa 24.22.1; esta PC tiene 22.19 y no se actualiza (lo decidió el dueño). Lo que acredita una entrega corre en el contenedor `node:24.22.1-bookworm-slim`.
 
 ## Servidor
 
-- **Lanzar el agente del servidor** desde PuTTY como `codex`, sin flags y **dentro de tmux**. Las sesiones que llegan por el daemon o el host de código quedan en sandbox y no sirven. Al principio de cada traspaso hay que pegar este chequeo:
-
-```
-Antes de nada, comprobá tu propio entorno:
-  sudo -n true && echo sudo-ok
-  systemctl is-system-running
-  getent hosts app.stisistemas.com
-Si sudo está bloqueado por "no new privileges", no hay systemd, o no resuelve
-DNS, estás en una sesión sandboxeada y no sirve para este trabajo. Pará ahí y
-decilo, sin buscar rodeos.
-```
-
-- **Rollback probado:**
-  - todo: `sudo /srv/sti-os/private/docs/20261027T041938Z/rollback-current-production.sh`;
-  - solo el frontend `bab6a1c`: `…/20261027T132246Z-frontend-bab6a1c/rollback-frontend.sh`.
+- **El agente de servidor es Claude, en `~/sti-agente`.** Codex ya no hace pases. Cómo se lanza ese agente no consta en este repositorio.
+- **No hay vuelta atrás probada** hasta que el servidor cierre su encargo 001. Los scripts de reversión del 27/10 no se dan por válidos.
 - La evidencia vive en `/srv/sti-os/private/docs/<timestamp>/` (`root:root 0600`).
-- Credenciales: el backend las recibe por `LoadCredential` y `SPRING_CONFIG_IMPORT=configtree:/run/credentials/sti-backend.service/`.
+- **Credenciales del backend.** Según lo que reportó el agente de servidor el 27/10, la unidad systemd entrega con `LoadCredential` los archivos `STI_DB_URL`, `STI_DB_USER`, `STI_DB_PASSWORD` y `STI_UPLOADS_DIR` en `/run/credentials/sti-backend.service/`, y Spring los lee con `SPRING_CONFIG_IMPORT=configtree:/run/credentials/sti-backend.service/`. Ese día `/api/health` respondió 200. No se verificó desde esta PC ni se volvió a medir el 19/11. El archivo viejo `db-runtime` no lo carga nadie y quedó como residuo. La misma versión está en [backend/README.md](backend/README.md).
 
 ## Preservar
 
 - `server/`, `output/`, `docs/transcripciones/` y `APP Servicio STI 2026.txt` están **fuera de git**: un clon nuevo no los trae, y algunos enlaces de los documentos apuntan ahí.
 - Credenciales locales: `output/backend-local/credentials.json` y `output/vps-admin-credentials.txt`. Nunca se pegan en chats ni en commits.
-- No desplegar, no hacer push y no tocar evidencia del servidor como consecuencia automática de abrir este documento.
-- `job-seeker/` en la raíz es otro proyecto, sin trackear; no pertenece a este repo.
+- No desplegar, no hacer push a `main` sin entrega y no tocar evidencia del servidor como consecuencia automática de abrir este documento.
+- `job-seeker/` en la raíz es otro proyecto, excluido en `.git/info/exclude`; no pertenece a este repo.
