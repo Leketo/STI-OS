@@ -11,6 +11,7 @@ Este directorio se copió desde `C:\dev\STI\STI-OS` el 29/10/2026. Índice actua
 | [CLAUDE.md](CLAUDE.md) | Reglas de trabajo del agente de desarrollo, fijadas por el PO. Si algo choca con otro documento, vale este. |
 | [coordinacion/](coordinacion/) | Registro de eventos: entregas, rectificaciones y decisiones, uno por archivo (`E-NNN-…`). |
 | [docs/informe-corte-1-2026-11-19.md](docs/informe-corte-1-2026-11-19.md) | Corte 1, "Tareas que no se traban": criterios CA-01 a CA-11 con comando, resultado y evidencia ([docs/evidencia-corte-1/](docs/evidencia-corte-1/)). |
+| [docs/informe-corte-2-2026-11-19.md](docs/informe-corte-2-2026-11-19.md) | Corte 2, "Usuarios y contraseñas": criterios CA-12 a CA-27, límites de la vuelta atrás y respuestas del encargo ([docs/evidencia-corte-2/](docs/evidencia-corte-2/)). |
 | [docs/informe-e2e-2026-11-18.md](docs/informe-e2e-2026-11-18.md) | Prueba de punta a punta del 18/11 con datos falsos: matriz de reglas, hallazgos N-11 a N-18 (antes D1–D8) con archivo y línea. |
 | [docs/definiciones-funcionales.md](docs/definiciones-funcionales.md) | Decisiones del cliente y preguntas abiertas. Manda sobre el relevamiento original. |
 | [docs/stack-y-plan-tecnico.md](docs/stack-y-plan-tecnico.md) | Stack elegido, fases T1/T2/T3 y seguridad. Plan del 26/10; los hashes de commit que cita son históricos. |

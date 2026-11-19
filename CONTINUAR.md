@@ -21,7 +21,8 @@ Las reglas de negocio están en [docs/definiciones-funcionales.md](docs/definici
 
 **Código:**
 - **Corte 1, "Tareas que no se traban" (ENCARGO-DEV-001 v2):** se entrega como `v0.1.1-candidato.1`. Informe: [docs/informe-corte-1-2026-11-19.md](docs/informe-corte-1-2026-11-19.md). Corrige N-11 a N-17 y aplica D-26. No migra la base (Flyway sigue en 3). **No está publicado**: cerrar el corte no autoriza el pase.
-- La rama de trabajo es `fix/ajustes-kanban`; `main` avanza solo por fast-forward.
+- **Corte 2, "Usuarios y contraseñas" (ENCARGO-DEV-002):** se entrega como `v0.2.0-candidato.1`. Informe: [docs/informe-corte-2-2026-11-19.md](docs/informe-corte-2-2026-11-19.md). Pantalla Usuarios, contraseña inicial generada por el sistema, primer ingreso, "Mi contraseña", filtro de estado. **Trae la migración V4** (solo agrega) y la reescritura `/api/accounts/:path*`. No está publicado.
+- Cada corte trabaja en su rama (el 2 en `feat/usuarios-y-contrasenas`); `main` avanza solo por fast-forward.
 
 **Producción** (`https://app.stisistemas.com`), según la medición del agente de servidor del 19/11:
 - Frontend: release `20261030-826d42a3-production`, compilado de `826d42a`, en loopback `:3006`. **El rediseño Kanban está desplegado.** Su código es idéntico al de `main` en `60115ab`.
@@ -33,18 +34,18 @@ Las reglas de negocio están en [docs/definiciones-funcionales.md](docs/definici
 **Pruebas:**
 - 18/11, antes del corte: [docs/informe-e2e-2026-11-18.md](docs/informe-e2e-2026-11-18.md). Suite 19/19, matriz por API 110 OK y 4 fallas.
 - 19/11, corte 1: suite 25/25 contra PG 18.6 y matriz por API 120 OK y 0 fallas. Detalle y límites en el informe del corte.
+- 19/11, corte 2: suite 41/41 contra PG 18.6, matriz por API 194 OK y 0 fallas, y la matriz del corte 1 con el JAR de v0.1.1 contra el esquema 4: 120 OK.
 
 ## Lo próximo, en orden
 
 Los defectos del 18/11 se numeran N-11 a N-18 (antes D1 a D8). Las decisiones del PO usan la serie D-NN; los defectos propios del desarrollo, DEV-NN.
 
-1. **QA del corte 1** y decisión del PO sobre el pase. El pase lo hace el agente de servidor desde la etiqueta.
+1. **QA de los cortes 1 y 2** y decisión del PO sobre el pase. El corte 2 trae V4: la vuelta atrás a v0.1.1 tiene los dos límites escritos en su informe (CA-25). El pase lo hace el agente de servidor desde la etiqueta.
 2. **Tareas ya trabadas en producción.** Quedaron fuera del corte. Para detectarlas sin tocar nada: [backend/scripts/consultas/tareas-trabadas.sql](backend/scripts/consultas/tareas-trabadas.sql), que es de solo lectura. Repararlas lo decide el PO.
 3. **Facturar pide confirmación** (N-18, decidido en D-15). Queda fuera del corte 1.
 4. **Decisiones abiertas**, las decide el dueño:
    - ¿Los nombres de empresa son únicos?
-   - ¿Cómo se gestionan las cuentas CLIENTE (listar, desactivar, cambiar contraseña)?
-   - ¿El estilo visual es el de `/demo` (lo pedido el 27/10) o el del rediseño del 29/10?
+    - ¿El estilo visual es el de `/demo` (lo pedido el 27/10) o el del rediseño del 29/10?
 5. **Pendientes del servidor**, que se arrastran desde el 27/10 y **no se cierran solos**:
    - Encargo 001 del servidor: vuelta atrás probada.
    - Subir HSTS a un año (`31536000`, sin `includeSubDomains` ni `preload`).
@@ -92,7 +93,7 @@ $env:PORT='3021'; node .next/standalone/server.js
 - **`STI_API_ORIGIN`:**
   - se necesita **al compilar y al correr**;
   - debe ser exactamente `http://127.0.0.1:…`; `localhost` falla;
-  - `ensayo.ps1` comprueba por contenido que el manifiesto traiga las reescrituras de `/api/auth`, `/api/tasks` y `/api/projects`.
+  - `ensayo.ps1` comprueba por contenido que el manifiesto traiga las reescrituras de `/api/auth`, `/api/tasks`, `/api/projects` y `/api/accounts`.
 - **Detección de agentes de Next.** Con 16.4.2, `next build` terminaba con código 1 después de compilar si lo corría un agente (N-17). Con 16.4.6 el build sale 0 con las variables de agente puestas, y `ensayo.ps1` ya no tolera un build fallido. `next dev` con 16.4.6 desde un agente no se volvió a probar.
 - **Bloqueos de archivos.** Hay que parar el backend antes de `package` (Windows bloquea el JAR) y parar el standalone antes de `npm run build` (`EBUSY`). `ensayo.ps1` copia los JAR para no bloquear `target/`.
 - **Node.** El servidor usa 24.22.1; esta PC tiene 22.19 y no se actualiza (lo decidió el dueño). Lo que acredita una entrega corre en el contenedor `node:24.22.1-bookworm-slim`.
