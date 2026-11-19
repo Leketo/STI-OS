@@ -8,7 +8,7 @@ Este directorio se copió desde `C:\dev\STI\STI-OS` el 29/10/2026. Índice actua
 | Documento | Para qué |
 |---|---|
 | [CONTINUAR.md](CONTINUAR.md) | Traspaso de sesión: estado, próximos pasos, cómo levantar, trampas. **Se lee primero.** |
-| [docs/informe-e2e-2026-11-18.md](docs/informe-e2e-2026-11-18.md) | Última prueba de punta a punta con datos falsos: matriz de reglas, defectos D1–D8 con archivo y línea. |
+| [docs/informe-e2e-2026-11-18.md](docs/informe-e2e-2026-11-18.md) | Última prueba de punta a punta con datos falsos: matriz de reglas, hallazgos N-11 a N-18 (antes D1–D8) con archivo y línea. |
 | [docs/definiciones-funcionales.md](docs/definiciones-funcionales.md) | Decisiones del cliente y preguntas abiertas. Manda sobre el relevamiento original. |
 | [docs/stack-y-plan-tecnico.md](docs/stack-y-plan-tecnico.md) | Stack elegido, fases T1/T2/T3 y seguridad. Plan del 26/10; los hashes de commit que cita son históricos. |
 | [docs/frontend-redesign.md](docs/frontend-redesign.md) | Especificación del rediseño Kanban y los arreglos posteriores. |

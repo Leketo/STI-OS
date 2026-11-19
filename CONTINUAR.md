@@ -24,9 +24,9 @@ Las reglas de negocio están en [docs/definiciones-funcionales.md](docs/definici
 - La rama de trabajo actual es `fix/ajustes-kanban`.
 
 **Producción** (`https://app.stisistemas.com`), según la medición del agente de servidor del 19/11 (corrige lo que decía este documento el 18/11):
-- Frontend: release `20261030-826d42a3-production`, compilado de `826d42a`. **El rediseño Kanban está desplegado.** `826d42a` difiere de `main` solo en `STACK.md`.
+- Frontend: release `20261030-826d42a3-production`, compilado de `826d42a`, en loopback `:3006`. **El rediseño Kanban está desplegado.** `826d42a` difiere de `main` solo en `STACK.md`.
 - Datos: 3 cuentas (1 ADMIN, 1 SUPERVISOR, 1 CLIENTE), 7 clientes, 17 proyectos y 7 tareas. No consta si son reales.
-- Sin volver a verificar desde el 27/10: backend en loopback `:8080`, PostgreSQL 18.6, frontend en `:3004`.
+- Sin volver a verificar desde el 27/10: backend en loopback `:8080` y PostgreSQL 18.6.
 - HSTS sigue en 300 s.
 
 **Prueba de punta a punta del 18/11:** [docs/informe-e2e-2026-11-18.md](docs/informe-e2e-2026-11-18.md).
@@ -36,16 +36,21 @@ Las reglas de negocio están en [docs/definiciones-funcionales.md](docs/definici
 
 ## Lo próximo, en orden
 
-1. **Corregir la concurrencia en el backend.** Es lo único que bloquea cargar datos reales. Dos confirmaciones simultáneas dejan la tarea trabada (8 de 8 vueltas), las fotos simultáneas pasan de 5, y una firma simultánea da 500 y deja un archivo huérfano. También se traba al desasignar al último pendiente. Detalle y dirección del arreglo en el informe, D1–D4.
-2. **Interfaz:**
-   - Un 401 tiene que llevar al login (D5).
-   - La fecha de la firma tiene que ser la local, no UTC (D6).
-3. **Pasar `next` de 16.4.2 a 16.4.6** (D7) y revalidar dev, build y standalone.
-4. **Decisiones del dueño:**
-   - ¿Facturar pide confirmación?
-   - ¿Los nombres de empresa son únicos?
-   - ¿Cómo se gestionan las cuentas CLIENTE (listar, desactivar, cambiar contraseña)?
-   - ¿El estilo visual es el de `/demo` (lo pedido el 27/10) o el del rediseño del 29/10?
+Los defectos del informe se renumeraron el 19/11: D1 a D8 pasan a ser **N-11 a N-18**. Las decisiones del PO usan la serie D-NN.
+
+1. **Primero del próximo corte (D-17): pasar `next` de 16.4.2 a 16.4.6** (N-17, antes D7; aprobado en D-16), en un commit propio y con toda la prueba repetida. En ese mismo commit se saca de `ensayo.ps1` la excepción que deja seguir cuando `next build` sale con error: el agente de servidor compila desde etiqueta y se detiene si el build sale con código 1.
+2. **Corregir la concurrencia en el backend.** Junto con N-16 es lo que bloquea cargar datos reales. Dos confirmaciones simultáneas dejan la tarea trabada (8 de 8 vueltas), las fotos simultáneas pasan de 5, y una firma simultánea da 500 y deja un archivo huérfano. También se traba al desasignar al último pendiente. Detalle y dirección del arreglo en el informe, N-11 a N-14 (antes D1–D4). Severidad: N-11 y N-14 altas, N-12 y N-13 medias.
+3. **Interfaz:**
+   - Un 401 tiene que llevar al login (N-15, antes D5).
+   - La fecha de la firma tiene que ser la local, no UTC (N-16, antes D6). Bloquea operar con datos reales.
+   - Facturar pide confirmación (N-18, antes D8; decidido en D-15).
+4. **Decisiones:**
+   - [x] ¿Facturar pide confirmación? Sí (D-15).
+   - [x] ¿Se actualiza `next` a 16.4.6? Sí, en un commit propio y con la prueba repetida (D-16).
+   - Siguen abiertas, las decide el dueño:
+     - ¿Los nombres de empresa son únicos?
+     - ¿Cómo se gestionan las cuentas CLIENTE (listar, desactivar, cambiar contraseña)?
+     - ¿El estilo visual es el de `/demo` (lo pedido el 27/10) o el del rediseño del 29/10?
 5. **Pendientes del servidor**, que se arrastran desde el 27/10 y **no se cierran solos**:
    - Subir HSTS a un año (`31536000`, sin `includeSubDomains` ni `preload`).
    - Confirmar si las 3 cuentas, 7 clientes, 17 proyectos y 7 tareas medidos el 19/11 son reales o de prueba.
@@ -96,7 +101,7 @@ $env:PORT='3021'; node .next/standalone/server.js
   - `next dev` sirve un solo pedido y se cierra;
   - `next build` termina con código 1 **después** de compilar.
 
-  Para seguir: correr `node scripts/prepare-standalone.mjs` y servir el standalone. El aviso pide ejecutar `next upgrade`; eso no se hace sin decidirlo (ver D7).
+  Para seguir: correr `node scripts/prepare-standalone.mjs` y servir el standalone. El aviso pide ejecutar `next upgrade`; no se ejecuta: la actualización está aprobada (D-16) y va en su propio commit (ver N-17).
 - **Bloqueos de archivos.** Hay que parar el backend antes de `package` (Windows bloquea el JAR) y parar el standalone antes de `npm run build` (`EBUSY`). `ensayo.ps1` copia los JAR para no bloquear `target/`.
 - **Node.** El README del frontend dice Node 24; esta máquina tiene 22.19 y todo pasa.
 

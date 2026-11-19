@@ -2,7 +2,7 @@
 
 Java 21, Spring Boot 4.1.2, PostgreSQL, Spring Security and Spring Session JDBC. The API contract is [`api/openapi.yaml`](api/openapi.yaml). Implemented: accounts, clients, projects, the full task domain (states, assignments, confirmations, GPS traceability), photos, client signature and invoicing. Not built: editing a task's title or detail, deleting photos, notifications and the ERP integration.
 
-**Known defects (18/11/2026):** concurrent writes on the same task are not serialized. Two simultaneous confirmations leave a task stuck in `EN_PROCESO`, simultaneous uploads exceed five photos, and a simultaneous second signature answers 500 and leaves an orphan file. Unassigning the last pending assignee also strands the task. Details and reproduction: [`docs/informe-e2e-2026-11-18.md`](../docs/informe-e2e-2026-11-18.md), D1–D4.
+**Known defects (18/11/2026):** concurrent writes on the same task are not serialized. Two simultaneous confirmations leave a task stuck in `EN_PROCESO`, simultaneous uploads exceed five photos, and a simultaneous second signature answers 500 and leaves an orphan file. Unassigning the last pending assignee also strands the task. Details and reproduction: [`docs/informe-e2e-2026-11-18.md`](../docs/informe-e2e-2026-11-18.md), findings N-11 to N-14 (formerly D1–D4).
 
 ## Ephemeral rehearsal environment (recommended for testing)
 

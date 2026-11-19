@@ -16,7 +16,7 @@ npm ci
 STI_API_ORIGIN=http://127.0.0.1:8080 npm run dev
 ```
 
-> **Si `npm run dev` corre desde un agente**, Next 16.4.2 detecta el entorno, atiende un solo pedido y se cierra, y `next build` termina con código 1 después de compilar. En ese caso la página parece no hidratar. Mientras no se actualice `next`, usá el bundle de producción: `node scripts/prepare-standalone.mjs` y `node .next/standalone/server.js`. El detalle está en [docs/informe-e2e-2026-11-18.md](../docs/informe-e2e-2026-11-18.md), D7. Para probar con el backend real, el entorno efímero es `backend/scripts/ensayo.ps1`.
+> **Si `npm run dev` corre desde un agente**, Next 16.4.2 detecta el entorno, atiende un solo pedido y se cierra, y `next build` termina con código 1 después de compilar. En ese caso la página parece no hidratar. Mientras no se actualice `next`, usá el bundle de producción: `node scripts/prepare-standalone.mjs` y `node .next/standalone/server.js`. El detalle está en [docs/informe-e2e-2026-11-18.md](../docs/informe-e2e-2026-11-18.md), N-17 (antes D7). Para probar con el backend real, el entorno efímero es `backend/scripts/ensayo.ps1`.
 
 `STI_API_ORIGIN` must apuntar al listener HTTP local del backend. No apuntar a un backend de producción para probar escrituras. Los endpoints conservan CSRF, sesión same-origin y los datos de ubicación ya previstos por la aplicación.
 
