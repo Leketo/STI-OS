@@ -1,6 +1,6 @@
 # STI-OS — definiciones funcionales vigentes
 
-Creado el 24/10/2026; última decisión registrada el 27/10/2026. Este documento registra las decisiones expresas del cliente transmitidas en la conversación y las dudas pendientes. El relevamiento original sigue en [`APP Servicio STI 2026.txt`](../APP%20Servicio%20STI%202026.txt); las decisiones posteriores de este documento prevalecen cuando hay contradicciones.
+Creado el 24/10/2026; última decisión registrada el 19/11/2026 (D-26). Este documento registra las decisiones expresas del cliente transmitidas en la conversación y las dudas pendientes. El relevamiento original sigue en [`APP Servicio STI 2026.txt`](../APP%20Servicio%20STI%202026.txt); las decisiones posteriores de este documento prevalecen cuando hay contradicciones.
 
 ## Producto y estructura
 
@@ -37,6 +37,10 @@ Una tarea puede tener varios usuarios asignados. Cada cuenta CLIENTE está vincu
 - ADMIN y SUPERVISOR pueden hacer `EN_PROCESO → POR_HACER`, `FINALIZADO → EN_PROCESO` y `FINALIZADO → POR_HACER`.
 - Si hay varios usuarios asignados, **todos deben confirmar** antes de finalizar. La interfaz muestra el avance `1 de 2`, `2 de 2`, `1 de 3`, etc. Con un solo asignado no se muestra contador y su confirmación finaliza la tarea.
 - Al retroceder una tarea se reinicia el progreso de confirmaciones y todos deben confirmar nuevamente.
+- **Personas asignadas, aprobado por el dueño el 19/11/2026 (D-26):**
+  1. No se puede iniciar una tarea que no tiene ninguna persona asignada. El sistema lo rechaza con un mensaje y la tarea sigue en `POR_HACER`.
+  2. Si se quita a una persona que todavía no había confirmado, y todas las que quedan ya confirmaron, la tarea pasa a `FINALIZADO` en ese momento. La bitácora registra quién la quitó, a quién se quitó y el motivo.
+  3. No se puede quitar a la última persona asignada de una tarea `EN_PROCESO`. El mensaje indica asignar a otra persona antes o volver la tarea a `POR_HACER`. Antes de iniciar, en `POR_HACER`, sí se la puede quitar: la regla 1 impide iniciarla vacía.
 - Una tarea `FACTURADO` no puede volver a otro estado ni recibir trabajo adicional; cualquier trabajo posterior se registra en una tarea nueva.
 - ADMIN puede marcar manualmente `FINALIZADO → FACTURADO` **solo si existe firma del cliente válida para esa finalización**.
 - La anulación conserva la tarea en el historial; las tareas anuladas se consultan en una pestaña exclusiva de ADMIN.
@@ -102,7 +106,7 @@ Resumen visual funcional al 24/10/2026: [`sti-os-mapa-funcional-2026-10-24.png`]
 1. ~~Qué hacer si el dispositivo no obtiene coordenadas.~~ **Resuelto el 26/10/2026**: se registra el motivo y la acción continúa. Confirmar con el cliente cuando valide la primera entrega.
 2. Si la captura de ubicación también aplica a asignaciones y reasignaciones. La creación, los cambios de estado, las confirmaciones y la anulación **ya la exigen** en la implementación actual; la asignación y la desasignación quedaron sin requisito de ubicación, porque el cliente no lo definió y no se inventó una regla. El esquema admite agregarla sin migración de datos.
 3. Cómo se selecciona el proyecto existente al crear una tarea cuando la empresa tiene varios proyectos.
-4. Reglas de edición y de cambios de integrantes con confirmaciones parciales. Lo decidido el 26/10/2026: retroceder una tarea borra todas las confirmaciones y supera la firma vigente; una tarea cerrada —finalizada, facturada o anulada— no admite asignar, desasignar ni subir fotos. Falta definir la edición del título y el detalle, y si quitar a un asignado que ya confirmó debe recalcular algo.
+4. Reglas de edición y de cambios de integrantes con confirmaciones parciales. Lo decidido el 26/10/2026: retroceder una tarea borra todas las confirmaciones y supera la firma vigente; una tarea cerrada —finalizada, facturada o anulada— no admite asignar, desasignar ni subir fotos. **Resuelto en parte el 19/11/2026 (D-26):** los cambios de integrantes siguen las tres reglas de la sección "Transiciones y confirmaciones". Quitar a alguien que ya confirmó no recalcula nada: las demás confirmaciones se mantienen y la tarea sigue esperando a quienes falten. Falta definir la edición del título y el detalle.
 5. ~~Tamaño, formatos admitidos y tratamiento de las cinco fotos.~~ **Resuelto el 26/10/2026**: JPEG y PNG hasta 10 MB, verificados por contenido. Falta definir si se pueden borrar fotos y quién.
 6. Visibilidad de una tarea anulada para quien la creó y necesidad de registrar motivo.
 7. Origen, administración y jerarquía de clientes y proyectos; campos obligatorios del formulario de tarea.

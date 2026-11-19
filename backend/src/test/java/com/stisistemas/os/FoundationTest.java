@@ -293,6 +293,8 @@ class FoundationTest {
         String task = JsonPath.read(created.body(), "$.id");
         var detail = supervisor.get("/api/tasks/" + task);
         assertThat(detail.body()).contains("El dispositivo no obtuvo coordenadas", "\"kind\":\"CREADA\"");
+        // D-26, rule 1: a task starts only with someone assigned.
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("supervisor") + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
         assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(200);
         assertThat(supervisor.get("/api/tasks/" + task).body()).contains("-25.3", "-57.6");
     }
@@ -463,6 +465,69 @@ class FoundationTest {
         report("CA-04", failures);
     }
 
+    /** CA-05 (N-14, D-26 rule 1): a task without assignees cannot start, and stays where it was. */
+    @Test void taskWithoutAssigneesCannotStart() throws Exception {
+        var supervisor = new Browser(); supervisor.login("supervisor");
+        String task = JsonPath.read(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Sin técnicos", HERE), supervisor.csrf()).body(), "$.id");
+        var refused = supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf());
+        assertThat(refused.statusCode()).isEqualTo(409);
+        assertThat(refused.body()).contains("SIN_ASIGNADOS", "No se puede iniciar una tarea sin personas asignadas");
+        assertThat(owner.queryForObject("SELECT status FROM sti.task WHERE id = ?::uuid", String.class, task)).isEqualTo("POR_HACER");
+        assertThat(count("SELECT count(*) FROM sti.task_event WHERE task_id = ?::uuid AND kind = 'ESTADO'", task)).isZero();
+    }
+
+    /** CA-06 (N-14, D-26 rule 2): removing the only pending assignee finishes the task, and the log says why. */
+    @Test void removingTheOnlyPendingAssigneeFinishesTheTask() throws Exception {
+        var supervisor = new Browser(); supervisor.login("supervisor");
+        String task = JsonPath.read(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Uno confirma, otro se va", HERE), supervisor.csrf()).body(), "$.id");
+        for (String person : new String[]{"usuario", "tecnico2"}) {
+            assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId(person) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        }
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        var worker = new Browser(); worker.login("usuario");
+        assertThat(worker.postJson("/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", worker.csrf()).statusCode()).isEqualTo(200);
+
+        var removed = supervisor.send("DELETE", "/api/tasks/" + task + "/assignments/" + userId("tecnico2"), supervisor.csrf());
+        assertThat(removed.statusCode()).isEqualTo(200);
+        assertThat(removed.body()).contains("\"status\":\"FINALIZADO\"");
+        assertThat(owner.queryForObject("SELECT status FROM sti.task WHERE id = ?::uuid", String.class, task)).isEqualTo("FINALIZADO");
+        var finish = owner.queryForMap("SELECT actor_id, subject_id, location_absent_reason FROM sti.task_event"
+            + " WHERE task_id = ?::uuid AND kind = 'ESTADO' AND to_status = 'FINALIZADO'", task);
+        assertThat(finish.get("actor_id")).isEqualTo(userId("supervisor"));
+        assertThat(finish.get("subject_id")).isEqualTo(userId("tecnico2"));
+        assertThat((String) finish.get("location_absent_reason")).contains("Finalizada al quitar a la única persona pendiente");
+        assertThat(count("SELECT count(*) FROM sti.task_event WHERE task_id = ?::uuid AND kind = 'DESASIGNADA'", task)).isEqualTo(1);
+
+        // Removing someone who already confirmed while another is still pending changes nothing else.
+        String other = JsonPath.read(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Se va el que confirmó", HERE), supervisor.csrf()).body(), "$.id");
+        for (String person : new String[]{"usuario", "tecnico2"}) {
+            supervisor.postJson("/api/tasks/" + other + "/assignments", "{\"userId\":\"" + userId(person) + "\"}", supervisor.csrf());
+        }
+        supervisor.postJson("/api/tasks/" + other + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf());
+        worker.postJson("/api/tasks/" + other + "/confirmations", "{\"location\":" + HERE + "}", worker.csrf());
+        assertThat(supervisor.send("DELETE", "/api/tasks/" + other + "/assignments/" + userId("usuario"), supervisor.csrf()).body())
+            .contains("\"status\":\"EN_PROCESO\"", "\"pending\":1");
+    }
+
+    /** CA-07 (N-14, D-26 rule 3): the last assignee of a task in progress cannot be removed; nothing changes. */
+    @Test void lastAssigneeOfATaskInProgressCannotBeRemoved() throws Exception {
+        var supervisor = new Browser(); supervisor.login("supervisor");
+        String task = JsonPath.read(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Último técnico", HERE), supervisor.csrf()).body(), "$.id");
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("usuario") + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(200);
+
+        var refused = supervisor.send("DELETE", "/api/tasks/" + task + "/assignments/" + userId("usuario"), supervisor.csrf());
+        assertThat(refused.statusCode()).isEqualTo(409);
+        assertThat(refused.body()).contains("ULTIMO_ASIGNADO", "Asigná a otra persona antes, o volvé la tarea a Por hacer");
+        assertThat(owner.queryForObject("SELECT status FROM sti.task WHERE id = ?::uuid", String.class, task)).isEqualTo("EN_PROCESO");
+        assertThat(count("SELECT count(*) FROM sti.task_assignment WHERE task_id = ?::uuid", task)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM sti.task_event WHERE task_id = ?::uuid AND kind = 'DESASIGNADA'", task)).isZero();
+
+        // Before starting, the last assignee can still be removed: rule 1 keeps that task from starting empty.
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"POR_HACER\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        assertThat(supervisor.send("DELETE", "/api/tasks/" + task + "/assignments/" + userId("usuario"), supervisor.csrf()).statusCode()).isEqualTo(200);
+    }
+
     /** Runs the actions at once: each on its own thread, session and connection, released together by a barrier. */
     private static <T> List<T> together(List<Callable<T>> actions) throws Exception {
         var barrier = new CyclicBarrier(actions.size());
@@ -555,6 +620,11 @@ class FoundationTest {
             if (csrf != null) request.header("X-CSRF-TOKEN", csrf);
             return client.send(request.POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray())).build(),
                 HttpResponse.BodyHandlers.ofString());
+        }
+        HttpResponse<String> send(String method, String path, String csrf) throws Exception {
+            var request = HttpRequest.newBuilder(uri(path));
+            if (csrf != null) request.header("X-CSRF-TOKEN", csrf);
+            return client.send(request.method(method, HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
         }
         HttpResponse<String> postJson(String path, String body, String csrf) throws Exception {
             var request = HttpRequest.newBuilder(uri(path)).header("Content-Type", "application/json");

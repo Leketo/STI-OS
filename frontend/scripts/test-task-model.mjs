@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canMove, canConfirm, canDrop } from "../src/app/app/task-model.ts";
+import {
+  canMove,
+  canConfirm,
+  canDrop,
+  canUnassign,
+  eventLabel,
+  finishesOnRemoval,
+} from "../src/app/app/task-model.ts";
 const task = {
   id: "t",
   status: "POR_HACER",
@@ -111,5 +118,47 @@ test("mobile respects an explicit empty stage but discards a stage unavailable t
   assert.equal(
     chooseMobileStage([{ status: "EN_PROCESO" }], stages, "FACTURADO"),
     "EN_PROCESO",
+  );
+});
+test("D-26 rule 1: a task without assignees offers no way to start it", () => {
+  const empty = { ...task, assignees: [], pending: 0 };
+  for (const account of [admin, supervisor, tech])
+    assert.equal(canMove(empty, "EN_PROCESO", account), false);
+  assert.equal(canDrop(empty, "EN_PROCESO", admin), false);
+});
+test("D-26 rule 3: the last assignee of a task in progress cannot be removed", () => {
+  const working = { ...task, status: "EN_PROCESO" };
+  assert.equal(canUnassign(working, "assigned"), false);
+  assert.equal(canUnassign(task, "assigned"), true);
+  const pair = {
+    ...working,
+    assignees: [
+      { id: "assigned", confirmed: true },
+      { id: "second", confirmed: false },
+    ],
+  };
+  assert.equal(canUnassign(pair, "second"), true);
+  assert.equal(canUnassign(pair, "nobody"), false);
+  assert.equal(canUnassign({ ...pair, status: "FINALIZADO" }, "second"), false);
+});
+test("D-26 rule 2: removing the only pending assignee finishes, and the log says so", () => {
+  const pair = {
+    ...task,
+    status: "EN_PROCESO",
+    assignees: [
+      { id: "assigned", confirmed: true },
+      { id: "second", confirmed: false },
+    ],
+  };
+  assert.equal(finishesOnRemoval(pair, "second"), true);
+  assert.equal(finishesOnRemoval(pair, "assigned"), false);
+  assert.equal(finishesOnRemoval({ ...pair, status: "POR_HACER" }, "second"), false);
+  assert.equal(
+    eventLabel({ kind: "ESTADO", toStatus: "FINALIZADO", subjectId: "second" }),
+    "Finalizó la tarea al quitar a la única persona pendiente",
+  );
+  assert.equal(
+    eventLabel({ kind: "ESTADO", toStatus: "FINALIZADO", subjectId: null }),
+    "Cambió a finalizadas",
   );
 });

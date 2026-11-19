@@ -31,6 +31,9 @@ public class TaskController {
     private static final Set<String> REQUESTABLE = Set.of("POR_HACER", "EN_PROCESO", "FACTURADO", "ANULADA");
     private static final Set<String> OPEN = Set.of("POR_HACER", "EN_PROCESO");
     private static final int MAX_PHOTOS = 5;
+    /** Kept in the status event of rule 2; the unassignment request carries no location. */
+    static final String FINISHED_BY_UNASSIGNING =
+        "Finalizada al quitar a la única persona pendiente: las demás ya habían confirmado. La desasignación no registra ubicación.";
     private final JdbcTemplate jdbc;
     private final Accounts accounts;
     private final Tasks tasks;
@@ -128,8 +131,25 @@ public class TaskController {
         var task = tasks.require(id, account);
         if (!OPERATORS.contains(account.role())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         if (!OPEN.contains(task.status())) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        int removed = jdbc.update("DELETE FROM sti.task_assignment WHERE task_id = ? AND user_id = ?", id, userId);
-        if (removed > 0) tasks.event(id, "DESASIGNADA", null, null, account.id(), userId, null);
+        var removed = task.assignees().stream().filter(assignee -> assignee.id().equals(userId)).findFirst();
+        if (removed.isEmpty()) return task;
+        boolean working = task.status().equals("EN_PROCESO");
+        // Rule 3 (D-26): a task in progress always keeps someone who can finish it.
+        if (working && task.assignees().size() == 1) {
+            throw new TaskConflict("ULTIMO_ASIGNADO", "No se puede quitar a la última persona asignada de una tarea en proceso. "
+                + "Asigná a otra persona antes, o volvé la tarea a Por hacer.");
+        }
+        jdbc.update("DELETE FROM sti.task_assignment WHERE task_id = ? AND user_id = ?", id, userId);
+        tasks.event(id, "DESASIGNADA", null, null, account.id(), userId, null);
+        // Rule 2 (D-26): removing the only one still pending finishes the task. The status event names who caused
+        // it (actor), whose removal did (subject) and why, in the reason the log keeps when a step has no location.
+        boolean othersConfirmed = task.assignees().stream()
+            .filter(assignee -> !assignee.id().equals(userId)).allMatch(Tasks.Assignee::confirmed);
+        if (working && !removed.get().confirmed() && othersConfirmed) {
+            jdbc.update("UPDATE sti.task SET status = 'FINALIZADO' WHERE id = ?", id);
+            tasks.event(id, "ESTADO", "EN_PROCESO", "FINALIZADO", account.id(), userId,
+                new Tasks.Location(null, null, null, FINISHED_BY_UNASSIGNING));
+        }
         return tasks.require(id, account);
     }
 
@@ -161,6 +181,10 @@ public class TaskController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         }
         if (to.equals(from)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        // Rule 1 (D-26): nobody could ever confirm a task started without assignees.
+        if (to.equals("EN_PROCESO") && task.assignees().isEmpty()) {
+            throw new TaskConflict("SIN_ASIGNADOS", "No se puede iniciar una tarea sin personas asignadas. Asigná al menos una antes de iniciarla.");
+        }
         if (to.equals("FACTURADO")) {
             if (!account.role().equals("ADMIN")) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
             if (!from.equals("FINALIZADO") || !task.signed()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);

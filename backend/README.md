@@ -2,7 +2,7 @@
 
 Java 21, Spring Boot 4.1.2, PostgreSQL, Spring Security and Spring Session JDBC. The API contract is [`api/openapi.yaml`](api/openapi.yaml). Implemented: accounts, clients, projects, the full task domain (states, assignments, confirmations, GPS traceability), photos, client signature and invoicing. Not built: editing a task's title or detail, deleting photos, notifications and the ERP integration.
 
-**Known defects (18/11/2026):** concurrent writes on the same task are not serialized. Two simultaneous confirmations leave a task stuck in `EN_PROCESO`, simultaneous uploads exceed five photos, and a simultaneous second signature answers 500 and leaves an orphan file. Unassigning the last pending assignee also strands the task. Details and reproduction: [`docs/informe-e2e-2026-11-18.md`](../docs/informe-e2e-2026-11-18.md), findings N-11 to N-14 (formerly D1–D4).
+**Defects found on 18/11/2026 and addressed in corte 1 (ENCARGO-DEV-001):** concurrent writes on the same task were not serialized (N-11 to N-13), and unassigning could strand a task (N-14). Details of the defects: [`docs/informe-e2e-2026-11-18.md`](../docs/informe-e2e-2026-11-18.md). The fix and its evidence are in the corte 1 report under `docs/`; until QA reviews it, that evidence is the development team's own validation.
 
 ## Ephemeral rehearsal environment (recommended for testing)
 
@@ -82,6 +82,14 @@ Migration `V2__tasks.sql` adds `task`, `task_assignment` and `task_event` plus t
 Rules as the client defined them. Every role creates in `POR_HACER`; USUARIO is auto-assigned to what it creates and CLIENTE creates unassigned inside its own company only. ADMIN and SUPERVISOR assign and unassign; an assigned USUARIO can start a task but never move it backwards. `FINALIZADO` is never requested directly: it is reached when **every** assignee confirms, which is the `1 de 2` counter. Moving a task backwards clears every confirmation, so all must confirm again. Only ADMIN cancels, and cancelled tasks stay in the history behind an ADMIN-only `?status=ANULADA` view. `FACTURADO` requires a client signature and belongs to the next slice; the API rejects it.
 
 Visibility: ADMIN everything, SUPERVISOR everything except cancelled, USUARIO only its assigned tasks and never `FACTURADO`, CLIENTE every task of its company except `FACTURADO` and `ANULADA`. A task outside reach returns the same 404 as a missing one.
+
+Every change to a task runs one at a time: each endpoint that changes a task first locks its row (`SELECT ... FOR UPDATE`) and holds the lock until commit. Counts of confirmations, photos and the current signature are therefore read after any competing change. A sixth photo or a second signature answers 409 with a `code` and a Spanish `message`; photo and signature files are written after their row and deleted if the transaction rolls back.
+
+Assignment rules approved by the owner on 19/11/2026 (D-26):
+
+1. A task with nobody assigned cannot start: 409 `SIN_ASIGNADOS`, and the task stays in `POR_HACER`.
+2. Removing the only assignee who had not confirmed, when everyone left already confirmed, moves the task to `FINALIZADO` at that moment. The `ESTADO` event keeps the operator as actor, the removed person as subject, and the reason in `location_absent_reason` (unassignment carries no location).
+3. The last assignee of a task `EN_PROCESO` cannot be removed: 409 `ULTIMO_ASIGNADO`, with a message to assign someone else first or move the task back to `POR_HACER`. In `POR_HACER` the last assignee can be removed, because rule 1 keeps that task from starting empty.
 
 Every defined step stores actor, instant and device location in `task_event`. Coordinates **or** an explicit absence reason must arrive; a step with neither is rejected. That follows the decision of 26/10/2026: a device that cannot obtain a fix records why instead of blocking a technician on site. Assignment and unassignment are the exception, because the client has not defined whether location applies there. `occurred_at` defaults to `clock_timestamp()`, not `now()`, so a confirmation and the `FINALIZADO` it triggers keep their order inside one transaction.
 

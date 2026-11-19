@@ -47,6 +47,7 @@ export type TaskEvent = {
   fromStatus: string | null;
   toStatus: string | null;
   actorName: string;
+  subjectId?: string | null;
   occurredAt: string;
   locationAbsentReason: string | null;
 };
@@ -114,6 +115,8 @@ export function canMove(
 ): boolean {
   if (task.status === to) return false;
   if (to === "EN_PROCESO" && task.status === "POR_HACER") {
+    // D-26, rule 1: nobody could finish a task started without assignees.
+    if (task.assignees.length === 0) return false;
     return (
       isOperator(account.role) ||
       (account.role === "USUARIO" && isAssigned(task, account.id))
@@ -128,6 +131,32 @@ export function canMove(
       account.role === "ADMIN" && task.status === "FINALIZADO" && task.signed
     );
   return false;
+}
+
+/** D-26, rule 3: a task in progress always keeps someone assigned who can finish it. */
+export function canUnassign(
+  task: Pick<Task, "status" | "assignees">,
+  assigneeId: string,
+): boolean {
+  if (task.status !== "POR_HACER" && task.status !== "EN_PROCESO") return false;
+  if (!task.assignees.some((a) => a.id === assigneeId)) return false;
+  return !(task.status === "EN_PROCESO" && task.assignees.length === 1);
+}
+
+/** D-26, rule 2: removing the only one still pending finishes the task, because everyone else confirmed. */
+export function finishesOnRemoval(
+  task: Pick<Task, "status" | "assignees">,
+  assigneeId: string,
+): boolean {
+  const removed = task.assignees.find((a) => a.id === assigneeId);
+  const others = task.assignees.filter((a) => a.id !== assigneeId);
+  return (
+    task.status === "EN_PROCESO" &&
+    !!removed &&
+    !removed.confirmed &&
+    others.length > 0 &&
+    others.every((a) => a.confirmed)
+  );
 }
 
 export function canConfirm(task: Task, accountId: string): boolean {
@@ -165,6 +194,8 @@ export function initials(name: string): string {
     .toUpperCase();
 }
 export function eventLabel(event: TaskEvent): string {
+  if (event.kind === "ESTADO" && event.toStatus === "FINALIZADO" && event.subjectId)
+    return "Finalizó la tarea al quitar a la única persona pendiente";
   if (event.kind === "ESTADO" && event.toStatus)
     return `Cambió a ${stageLabel(event.toStatus).toLowerCase()}`;
   return (

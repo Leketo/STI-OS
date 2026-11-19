@@ -42,6 +42,8 @@ import {
   chooseMobileStage,
   canDrop,
   canMove,
+  canUnassign,
+  finishesOnRemoval,
   eventLabel,
   initials,
   isAssigned,
@@ -216,6 +218,10 @@ export function TaskBoard({
           location: await deviceLocation(),
         }),
       `Tarea ${task.code}: ${stageLabel(to).toLowerCase()}.`,
+      (response) =>
+        response.status === 409 && to === "EN_PROCESO"
+          ? "No se puede iniciar una tarea sin personas asignadas. Asigná al menos una antes de iniciarla."
+          : errorFor(response),
     );
     setPendingMove(null);
   }
@@ -316,6 +322,13 @@ export function TaskBoard({
     const allowed = (to: string) => canMove(task, to, account);
     return (
       <div className="sti-action-group">
+        {task.status === "POR_HACER" &&
+          task.assignees.length === 0 &&
+          isOperator(account.role) && (
+            <p className="sti-form-help">
+              Asigná al menos una persona para poder iniciar la tarea.
+            </p>
+          )}
         {allowed("EN_PROCESO") && (
           <button
             className="sti-button primary"
@@ -1125,7 +1138,7 @@ export function TaskBoard({
                   {a.confirmed && (
                     <Check size={16} className="sti-success-icon" />
                   )}
-                  {operator && isOpen(selected) && (
+                  {operator && canUnassign(selected, a.id) && (
                     <button
                       className="sti-icon-button"
                       disabled={!!busy}
@@ -1139,7 +1152,13 @@ export function TaskBoard({
                               `/api/tasks/${selected.id}/assignments/${a.id}`,
                               {},
                             ),
-                          "Asignación retirada.",
+                          finishesOnRemoval(selected, a.id)
+                            ? "Asignación retirada. Las demás personas ya habían confirmado: la tarea quedó finalizada."
+                            : "Asignación retirada.",
+                          (response) =>
+                            response.status === 409
+                              ? "No se puede quitar a la última persona asignada de una tarea en proceso. Asigná a otra persona antes, o volvé la tarea a Por hacer."
+                              : errorFor(response),
                         )
                       }
                     >
@@ -1151,6 +1170,14 @@ export function TaskBoard({
               {!selected.assignees.length && (
                 <p className="sti-muted">Todavía no hay personas asignadas.</p>
               )}
+              {operator &&
+                selected.status === "EN_PROCESO" &&
+                selected.assignees.length === 1 && (
+                  <p className="sti-form-help">
+                    Para quitar a esta persona, asigná a otra antes o volvé la
+                    tarea a Por hacer.
+                  </p>
+                )}
             </div>
             {operator && isOpen(selected) && (
               <div className="sti-field">
