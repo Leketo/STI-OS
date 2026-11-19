@@ -23,9 +23,10 @@ Las reglas de negocio están en [docs/definiciones-funcionales.md](docs/definici
 - `main` = `60115ab`, que incluye el rediseño Kanban con temas día y noche (commits del 29 y 30/10; el PR #1 se integró el 18/11).
 - La rama de trabajo actual es `fix/ajustes-kanban`.
 
-**Producción** (`https://app.stisistemas.com`), según los documentos del 27/10 y la auditoría del 29/10; **no se volvió a verificar**:
-- Frontend `bab6a1c` en loopback `:3004`, backend en `:8080` y PostgreSQL 18.6.
-- **El rediseño Kanban no está desplegado.**
+**Producción** (`https://app.stisistemas.com`), según la medición del agente de servidor del 19/11 (corrige lo que decía este documento el 18/11):
+- Frontend: release `20261030-826d42a3-production`, compilado de `826d42a`. **El rediseño Kanban está desplegado.** `826d42a` difiere de `main` solo en `STACK.md`.
+- Datos: 3 cuentas (1 ADMIN, 1 SUPERVISOR, 1 CLIENTE), 7 clientes, 17 proyectos y 7 tareas. No consta si son reales.
+- Sin volver a verificar desde el 27/10: backend en loopback `:8080`, PostgreSQL 18.6, frontend en `:3004`.
 - HSTS sigue en 300 s.
 
 **Prueba de punta a punta del 18/11:** [docs/informe-e2e-2026-11-18.md](docs/informe-e2e-2026-11-18.md).
@@ -47,7 +48,7 @@ Las reglas de negocio están en [docs/definiciones-funcionales.md](docs/definici
    - ¿El estilo visual es el de `/demo` (lo pedido el 27/10) o el del rediseño del 29/10?
 5. **Pendientes del servidor**, que se arrastran desde el 27/10 y **no se cierran solos**:
    - Subir HSTS a un año (`31536000`, sin `includeSubDomains` ni `preload`).
-   - Confirmar si existe el primer ADMIN real. El 27/10 decía cero cuentas; la auditoría del 29/10 registra un login válido posterior.
+   - Confirmar si las 3 cuentas, 7 clientes, 17 proyectos y 7 tareas medidos el 19/11 son reales o de prueba.
    - **Backup fuera del VPS.** Hoy el backup es local; si se pierde la máquina se pierden las firmas.
    - Analizar las dos verificaciones que fallaron en `/srv/sti-os/private/docs/20261027T041938Z/REPORT.md`.
    - Higiene que levantó la auditoría del 29/10 (`server/auditoria-servidor-2026-10-29/INFORME-GENERAL.md`, ignorado por git): sudo amplio, credenciales de prueba en `/tmp`, releases y unidades viejas habilitadas, sin monitoreo, paquetes pendientes.

@@ -143,7 +143,7 @@ CLIENTE receives only its own company's directory and projects. An unknown or fo
 The history below this point (12 → 17 → 19 tests, the 26/10 browser checks) is kept as a record. The current state, as of 18/11/2026:
 
 - **Done:** PostgreSQL 18 parity (19/19 on the VPS on 27/10, and again in the 18.6 container on 18/11), the public cutover with the `/api` proxy and login rate limit, the private uploads path with a backup whose DB/uploads consistency was restored and checked, and browser verification against the deployment (27/10) and against a rehearsal environment with every role (18/11).
-- **Deployed:** backend on loopback `:8080` and frontend `bab6a1c`. The Kanban redesign (`1463560`…`60115ab`) is **not** deployed.
+- **Deployed:** backend on loopback `:8080` and the frontend release `20261030-826d42a3-production` (commit `826d42a`), which **includes** the Kanban redesign. Measured on 19/11; the 18/11 version of this line said otherwise and was wrong. Production holds 3 accounts, 7 clients, 17 projects and 7 tasks; whether they are real is not known.
 - **Still pending before real data:** the concurrency defects above, an off-VPS backup, raising HSTS from 300 s, and the server hygiene listed in the 29/10 audit. The tracking list lives in [`CONTINUAR.md`](../CONTINUAR.md).
 
 Keep local credentials and data out of any server handoff.

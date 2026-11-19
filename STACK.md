@@ -35,7 +35,7 @@ Este directorio se copió desde `C:\dev\STI\STI-OS` el 29/10/2026. Índice actua
 ## Enlaces
 
 - **Repositorio:** `https://github.com/Leketo/STI-OS`, rama `main`; la rama de trabajo actual es `fix/ajustes-kanban`.
-- **Aplicación:** `https://app.stisistemas.com`. El frontend desplegado es `bab6a1c`; el rediseño Kanban todavía no se publicó. `/` redirige a `/login` y `/demo` sigue pública.
+- **Aplicación:** `https://app.stisistemas.com`. El frontend desplegado es el release `20261030-826d42a3-production` (commit `826d42a`), con el rediseño Kanban; medido el 19/11. `/` redirige a `/login` y `/demo` sigue pública.
 - **Dominio y DNS:** registro A de `app.stisistemas.com` → `54.39.110.0` en Toledo Hosting. Detalle en `docs/dominio-sti-os.md`.
 - **VPS:** `vps-ffc655c1` en OVH, Ubuntu 26.04.1, PostgreSQL 18.6. Inventario en `server/ovh-vps-development.md`. La evidencia del servidor vive allá, en `/srv/sti-os/private/docs/<timestamp>/`.
 - **Local:**
