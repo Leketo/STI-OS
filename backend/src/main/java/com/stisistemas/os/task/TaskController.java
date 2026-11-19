@@ -107,6 +107,7 @@ public class TaskController {
     Tasks.Task assign(@PathVariable UUID id, @RequestBody NewAssignment input, Principal principal) {
         var account = accounts.active(principal.getName());
         if (input == null || input.userId() == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        tasks.lock(id);
         var task = tasks.require(id, account);
         if (!OPERATORS.contains(account.role())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         if (!OPEN.contains(task.status())) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
@@ -123,6 +124,7 @@ public class TaskController {
     @Transactional
     Tasks.Task unassign(@PathVariable UUID id, @PathVariable UUID userId, Principal principal) {
         var account = accounts.active(principal.getName());
+        tasks.lock(id);
         var task = tasks.require(id, account);
         if (!OPERATORS.contains(account.role())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         if (!OPEN.contains(task.status())) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
@@ -143,6 +145,7 @@ public class TaskController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         var location = tasks.checked(input.location());
+        tasks.lock(id);
         var task = tasks.require(id, account);
         String from = task.status();
         String to = input.to();
@@ -177,20 +180,26 @@ public class TaskController {
     @Transactional
     Tasks.Photo addPhoto(@PathVariable UUID id, @RequestParam("file") MultipartFile file, Principal principal) {
         var account = accounts.active(principal.getName());
+        tasks.lock(id);
         var task = tasks.require(id, account);
         if (!OPEN.contains(task.status())) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         if (!mayAttach(account, task)) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         // Distinct statuses so the interface can say what is actually wrong instead of a generic rejection.
-        if (task.photoCount() >= MAX_PHOTOS) throw new ResponseStatusException(HttpStatus.CONFLICT);
+        // Counted under the task lock: simultaneous uploads see each other's rows.
+        if (task.photoCount() >= MAX_PHOTOS) {
+            throw new TaskConflict("MAXIMO_FOTOS", "La tarea ya tiene cinco fotos, el máximo permitido.");
+        }
         byte[] bytes = read(file);
         if (bytes.length > Uploads.MAX_PHOTO_BYTES) throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE);
         String contentType = Uploads.imageType(bytes);
         if (contentType == null) throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
         UUID photo = UUID.randomUUID();
+        String storage = Uploads.name(contentType);
         jdbc.update("""
             INSERT INTO sti.task_photo (id, task_id, storage_name, content_type, byte_size, uploaded_by)
             VALUES (?,?,?,?,?,?)""",
-            photo, id, uploads.store(bytes, contentType), contentType, bytes.length, account.id());
+            photo, id, storage, contentType, bytes.length, account.id());
+        uploads.write(storage, bytes);
         return tasks.photos(id).stream().filter(stored -> stored.id().equals(photo)).findFirst()
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR));
     }
@@ -234,13 +243,16 @@ public class TaskController {
         if (signer.isEmpty() || signer.length() > 200) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         LocalDate signedOn = signedOn(input.signedOn());
         var location = tasks.checked(input.location());
+        tasks.lock(id);
         var task = tasks.require(id, account);
         if (!task.status().equals("FINALIZADO")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         boolean remote = account.role().equals("CLIENTE");
         boolean presenter = remote || OPERATORS.contains(account.role())
             || task.assignees().stream().anyMatch(assignee -> assignee.id().equals(account.id()));
         if (!presenter) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        if (task.signed()) throw new ResponseStatusException(HttpStatus.CONFLICT);
+        if (task.signed()) {
+            throw new TaskConflict("FIRMA_VIGENTE", "La tarea ya tiene una firma vigente. Para firmar de nuevo hay que reabrirla.");
+        }
 
         byte[] stroke = decode(input.image());
         if (stroke.length == 0 || stroke.length > Uploads.MAX_SIGNATURE_BYTES
@@ -248,12 +260,14 @@ public class TaskController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         UUID signature = UUID.randomUUID();
+        String storage = Uploads.name("image/png");
         jdbc.update("""
             INSERT INTO sti.task_signature (id, task_id, storage_name, byte_size, signer_name, signed_on,
                                             presented_by, remote, latitude, longitude, accuracy_m, location_absent_reason)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-            signature, id, uploads.store(stroke, "image/png"), stroke.length, signer, signedOn, account.id(), remote,
+            signature, id, storage, stroke.length, signer, signedOn, account.id(), remote,
             location.latitude(), location.longitude(), location.accuracyM(), location.absentReason());
+        uploads.write(storage, stroke);
         tasks.event(id, "FIRMA", null, null, account.id(), null, location);
         return tasks.signatures(id).stream().filter(stored -> stored.id().equals(signature)).findFirst()
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR));
@@ -304,6 +318,8 @@ public class TaskController {
         var account = accounts.active(principal.getName());
         if (input == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         var location = tasks.checked(input.location());
+        // Without the lock two last confirmations each counted the other as pending and none finished the task (N-11).
+        tasks.lock(id);
         var task = tasks.require(id, account);
         if (!task.status().equals("EN_PROCESO")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         if (task.assignees().stream().noneMatch(assignee -> assignee.id().equals(account.id()))) {

@@ -81,6 +81,16 @@ public class Tasks {
         return withAssignees(jdbc.query(sql.toString(), Tasks::row, parameters.toArray()));
     }
 
+    /**
+     * Every change to a task runs one at a time: this row lock is taken first and held until the transaction ends.
+     * Under READ COMMITTED each later statement sees what the previous holder committed, so counts of
+     * confirmations, photos and signatures are read after the competing change, not beside it. Only one task is
+     * locked per transaction, so two requests cannot wait on each other.
+     */
+    public void lock(UUID taskId) {
+        jdbc.queryForList("SELECT id FROM sti.task WHERE id = ? FOR UPDATE", taskId);
+    }
+
     /** The visible task or 404; a task outside the account's reach is indistinguishable from a missing one. */
     public Task require(UUID id, Account account) {
         var sql = new StringBuilder(SELECT).append(" AND t.id = ?");

@@ -8,6 +8,8 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
@@ -34,15 +36,39 @@ public class Uploads {
         return null;
     }
 
-    public String store(byte[] bytes, String contentType) {
-        String name = UUID.randomUUID() + (contentType.equals("image/png") ? ".png" : ".jpg");
+    /** A fresh storage name; the caller inserts its row first and then {@link #write}s the bytes. */
+    public static String name(String contentType) {
+        return UUID.randomUUID() + (contentType.equals("image/png") ? ".png" : ".jpg");
+    }
+
+    /**
+     * Writes the file after its row was inserted. If the transaction rolls back afterwards (a lost race, a failed
+     * statement, a failed commit), the file is deleted, so no file is left on disk without its row. When the
+     * outcome is unknown the file is kept: an orphan is recoverable, a row without its file is not.
+     */
+    public void write(String name, byte[] bytes) {
+        Path file = root.resolve(name).normalize();
         try {
             Files.createDirectories(root);
-            Files.write(root.resolve(name), bytes);
+            Files.write(file, bytes);
         } catch (IOException failure) {
             throw new UncheckedIOException(failure);
         }
-        return name;
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCompletion(int status) {
+                    if (status == STATUS_ROLLED_BACK) delete(file);
+                }
+            });
+        }
+    }
+
+    private static void delete(Path file) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException ignored) {
+            // Nothing more can be done here; the file stays as an orphan and the log of the request shows why.
+        }
     }
 
     public byte[] read(String name) {

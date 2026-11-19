@@ -1,6 +1,8 @@
 package com.stisistemas.os;
 
+import com.stisistemas.os.task.TaskConflict;
 import java.util.Map;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -18,4 +20,21 @@ public class ApiErrors {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
     Map<String, Integer> uploadTooLarge() { return Map.of("status", 413); }
+
+    @ExceptionHandler(TaskConflict.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    Map<String, Object> taskConflict(TaskConflict conflict) {
+        return Map.of("status", 409, "code", conflict.code(), "message", conflict.getMessage());
+    }
+
+    /**
+     * A unique index caught a write that raced another one. The task lock makes this unexpected, but the answer
+     * must still be a conflict, never a server error.
+     */
+    @ExceptionHandler(DuplicateKeyException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    Map<String, Object> duplicate() {
+        return Map.of("status", 409, "code", "DUPLICADO",
+            "message", "Otra persona registró lo mismo al mismo tiempo. Actualizá la vista.");
+    }
 }

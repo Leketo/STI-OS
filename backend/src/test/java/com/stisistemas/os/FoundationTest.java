@@ -9,8 +9,17 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +40,8 @@ class FoundationTest {
     static final UUID PROJECT_A = UUID.randomUUID();
     static final UUID PROJECT_B = UUID.randomUUID();
     static final String LONG_NAME = "long".repeat(28);
+    /** Fixed once: a supplier that drew a new name on every read would point the test and the app to different folders. */
+    static final String UPLOADS = "target/test-uploads-" + UUID.randomUUID();
     static JdbcTemplate owner;
 
     @DynamicPropertySource
@@ -52,7 +63,9 @@ class FoundationTest {
             UUID.randomUUID(), "second@example.invalid", "Second client", hash, "CLIENTE", COMPANY_B);
         owner.update("INSERT INTO sti.app_user(id,email,display_name,password_hash,role) VALUES (?,?,?,?,?)",
             UUID.randomUUID(), LONG_NAME + "@example.invalid", "Long email", hash, "USUARIO");
-        registry.add("sti.uploads.dir", () -> "target/test-uploads-" + UUID.randomUUID());
+        owner.update("INSERT INTO sti.app_user(id,email,display_name,password_hash,role) VALUES (?,?,?,?,?)",
+            UUID.randomUUID(), "tecnico2@example.invalid", "Second technician", hash, "USUARIO");
+        registry.add("sti.uploads.dir", () -> UPLOADS);
         registry.add("spring.datasource.url", () -> url);
         registry.add("spring.datasource.username", () -> required("STI_DB_USER"));
         registry.add("spring.datasource.password", () -> required("STI_DB_PASSWORD"));
@@ -60,6 +73,9 @@ class FoundationTest {
 
     @LocalServerPort int port;
     @Autowired JdbcTemplate runtime;
+
+    /** Rounds of every concurrency test (ENCARGO-DEV-001, CA-02 to CA-04). Each round reports whether it failed. */
+    static final int ROUNDS = 10;
 
     @Test void unauthenticatedRequestsAndInvalidCredentialsAreRejected() throws Exception {
         var browser = new Browser();
@@ -364,6 +380,124 @@ class FoundationTest {
         assertThat(supervisor.get("/api/tasks/" + task).body()).contains("\"photoCount\":5");
         assertThat(supervisor.postFile("/api/tasks/" + task + "/photos", JPEG, "sexta.jpg", supervisor.csrf()).statusCode()).isEqualTo(409);
         assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"ANULADA\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(403);
+    }
+
+    /** CA-02 (N-11): two technicians confirm at once; the task must finish, with one status change. */
+    @Test void simultaneousLastConfirmationsFinishTheTask() throws Exception {
+        var supervisor = new Browser(); supervisor.login("supervisor");
+        List<String> failures = new ArrayList<>();
+        for (int round = 1; round <= ROUNDS; round++) {
+            String task = JsonPath.read(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Confirmación simultánea " + round, HERE), supervisor.csrf()).body(), "$.id");
+            for (String person : new String[]{"usuario", "tecnico2"}) {
+                assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId(person) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+            }
+            assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(200);
+            var first = new Browser(); first.login("usuario");
+            var second = new Browser(); second.login("tecnico2");
+            String firstToken = first.csrf(), secondToken = second.csrf();
+            String body = "{\"location\":" + HERE + "}";
+            var answers = together(List.<Callable<Integer>>of(
+                () -> first.postJson("/api/tasks/" + task + "/confirmations", body, firstToken).statusCode(),
+                () -> second.postJson("/api/tasks/" + task + "/confirmations", body, secondToken).statusCode()));
+            String status = owner.queryForObject("SELECT status FROM sti.task WHERE id = ?::uuid", String.class, task);
+            int confirmations = count("SELECT count(*) FROM sti.task_event WHERE task_id = ?::uuid AND kind = 'CONFIRMACION'", task);
+            int finishes = count("SELECT count(*) FROM sti.task_event WHERE task_id = ?::uuid AND kind = 'ESTADO' AND to_status = 'FINALIZADO'", task);
+            if (!answers.equals(List.of(200, 200)) || !"FINALIZADO".equals(status) || confirmations != 2 || finishes != 1) {
+                failures.add("vuelta " + round + ": respuestas " + answers + ", estado " + status + ", confirmaciones " + confirmations + ", finalizaciones " + finishes);
+            }
+        }
+        report("CA-02", failures);
+    }
+
+    /** CA-03 (N-12): four uploads at once onto a task with four photos; exactly one more fits. */
+    @Test void simultaneousUploadsStopAtFivePhotos() throws Exception {
+        var supervisor = new Browser(); supervisor.login("supervisor");
+        List<String> failures = new ArrayList<>();
+        for (int round = 1; round <= ROUNDS; round++) {
+            String task = JsonPath.read(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Fotos simultáneas " + round, HERE), supervisor.csrf()).body(), "$.id");
+            for (int photo = 0; photo < 4; photo++) {
+                assertThat(supervisor.postFile("/api/tasks/" + task + "/photos", JPEG, "foto.jpg", supervisor.csrf()).statusCode()).isEqualTo(201);
+            }
+            List<Callable<Integer>> uploads = new ArrayList<>();
+            for (int sender = 0; sender < 4; sender++) {
+                var browser = new Browser(); browser.login("supervisor");
+                String token = browser.csrf();
+                uploads.add(() -> browser.postFile("/api/tasks/" + task + "/photos", JPEG, "foto.jpg", token).statusCode());
+            }
+            var answers = together(uploads);
+            int rows = count("SELECT count(*) FROM sti.task_photo WHERE task_id = ?::uuid", task);
+            long files = owner.queryForList("SELECT storage_name FROM sti.task_photo WHERE task_id = ?::uuid", String.class, task)
+                .stream().filter(name -> Files.isRegularFile(Path.of(UPLOADS, name))).count();
+            long created = answers.stream().filter(code -> code == 201).count();
+            long refused = answers.stream().filter(code -> code == 409).count();
+            boolean disk = orphanFree();
+            if (rows != 5 || files != 5 || created != 1 || refused != 3 || !disk) {
+                failures.add("vuelta " + round + ": respuestas " + answers + ", filas " + rows + ", archivos " + files + ", disco = base " + disk);
+            }
+        }
+        report("CA-03", failures);
+    }
+
+    /** CA-04 (N-13): two signatures at once; one stays current, the other gets a clear 409 and leaves no file. */
+    @Test void simultaneousSignaturesKeepOneAndAnswerConflict() throws Exception {
+        var supervisor = new Browser(); supervisor.login("supervisor");
+        String signature = "{\"signerName\":\"Encargado\",\"signedOn\":\"2026-11-19\",\"image\":\"" + PNG_BASE64 + "\",\"location\":" + HERE + "}";
+        List<String> failures = new ArrayList<>();
+        for (int round = 1; round <= ROUNDS; round++) {
+            String task = finished(supervisor);
+            var presenter = new Browser(); presenter.login("supervisor");
+            var customer = new Browser(); customer.login("cliente");
+            String presenterToken = presenter.csrf(), customerToken = customer.csrf();
+            var answers = together(List.<Callable<HttpResponse<String>>>of(
+                () -> presenter.postJson("/api/tasks/" + task + "/signature", signature, presenterToken),
+                () -> customer.postJson("/api/tasks/" + task + "/signature", signature, customerToken)));
+            List<Integer> codes = answers.stream().map(HttpResponse::statusCode).sorted().toList();
+            boolean clear = answers.stream().filter(answer -> answer.statusCode() == 409)
+                .allMatch(answer -> answer.body().contains("ya tiene una firma vigente"));
+            int current = count("SELECT count(*) FROM sti.task_signature WHERE task_id = ?::uuid AND superseded_at IS NULL", task);
+            boolean disk = orphanFree();
+            if (!codes.equals(List.of(201, 409)) || !clear || current != 1 || !disk) {
+                failures.add("vuelta " + round + ": respuestas " + codes + ", mensaje claro " + clear + ", vigentes " + current + ", disco = base " + disk);
+            }
+        }
+        report("CA-04", failures);
+    }
+
+    /** Runs the actions at once: each on its own thread, session and connection, released together by a barrier. */
+    private static <T> List<T> together(List<Callable<T>> actions) throws Exception {
+        var barrier = new CyclicBarrier(actions.size());
+        var pool = Executors.newFixedThreadPool(actions.size());
+        try {
+            List<Future<T>> pending = new ArrayList<>();
+            for (var action : actions) {
+                pending.add(pool.submit(() -> { barrier.await(10, TimeUnit.SECONDS); return action.call(); }));
+            }
+            List<T> results = new ArrayList<>();
+            for (var result : pending) results.add(result.get(60, TimeUnit.SECONDS));
+            return results;
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /** Files on disk equal the photo and signature rows: no file without its row anywhere in this run. */
+    private boolean orphanFree() throws Exception {
+        long files = 0;
+        if (Files.isDirectory(Path.of(UPLOADS))) {
+            try (var listing = Files.list(Path.of(UPLOADS))) { files = listing.filter(Files::isRegularFile).count(); }
+        }
+        return files == count("SELECT (SELECT count(*) FROM sti.task_photo) + (SELECT count(*) FROM sti.task_signature)");
+    }
+
+    private static int count(String sql, Object... parameters) {
+        Integer value = owner.queryForObject(sql, Integer.class, parameters);
+        return value == null ? 0 : value;
+    }
+
+    private static void report(String criterion, List<String> failures) {
+        System.out.println(criterion + ": " + failures.size() + " de " + ROUNDS + " vueltas con falla");
+        failures.forEach(failure -> System.out.println(criterion + " " + failure));
+        assertThat(failures).as(criterion + ": vueltas con falla").isEmpty();
     }
 
     /** A task carried to FINALIZADO by its single assignee, ready to be signed. */
