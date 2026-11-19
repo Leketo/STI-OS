@@ -55,6 +55,20 @@ function Construir-Interfaz([string]$log) {
     if ($LASTEXITCODE -ne 0) { throw "La compilación de la interfaz falló ($log)" }
     $v = (& docker run --rm $imagenFrontend cat /node-version.txt) -join ''
     Write-Output "Interfaz compilada con Node $($v.Trim()) en $imagenFrontend (agente=$Agente)"
+    Verificar-Reescrituras ((& docker run --rm $imagenFrontend cat .next/routes-manifest.json) -join "`n")
+}
+
+# Por contenido, como lo comprueba el servidor: no alcanza con que haya alguna reescritura.
+function Verificar-Reescrituras([string]$manifiesto) {
+    $destino = "http://127.0.0.1:$puertoBackend"
+    $reglas = @((ConvertFrom-Json $manifiesto).rewrites.afterFiles)
+    $faltan = @()
+    foreach ($ruta in '/api/auth/:path*', '/api/tasks/:path*', '/api/tasks', '/api/projects/:path*', '/api/projects') {
+        $regla = $reglas | Where-Object { $_.source -eq $ruta } | Select-Object -First 1
+        if (-not $regla -or -not $regla.destination.StartsWith("$destino/")) { $faltan += $ruta }
+    }
+    if ($faltan.Count) { throw "El manifiesto de rutas no reescribe a ${destino}: $($faltan -join ', ')" }
+    Write-Output "Reescrituras de /api/auth, /api/tasks y /api/projects hacia $destino presentes en el manifiesto"
 }
 
 function Existe-Contenedor([string]$nombre) {
@@ -206,22 +220,11 @@ switch ($Accion) {
                 } elseif ($Frontend -eq 'prod') {
                     Push-Location $front
                     try {
-                        $inicio = Get-Date
                         $buildLog = Join-Path $root 'logs/frontend-build.log'
+                        # Igual que el servidor: un build que termina con error detiene el ensayo (CLAUDE.md, sección 8).
                         & npm.cmd run build *> $buildLog
-                        if ($LASTEXITCODE -ne 0) {
-                            # Next 16.4.2 corta con SecurityFatalError DESPUÉS de compilar cuando detecta un agente
-                            # (ver docs/informe-e2e-2026-11-18.md, D7). Solo en ese caso, con un build nuevo, se completa
-                            # el empaquetado; cualquier otro error se trata como falla real.
-                            $buildId = Get-Item '.next/BUILD_ID' -ErrorAction SilentlyContinue
-                            $aviso = Select-String -Path $buildLog -Pattern 'SecurityFatalError' -Quiet
-                            if (-not ($aviso -and $buildId -and $buildId.LastWriteTime -gt $inicio)) { throw "npm run build falló ($buildLog)" }
-                            Write-Output 'AVISO: next build terminó con SecurityFatalError después de compilar (D7); se completa prepare-standalone.'
-                            & node scripts/prepare-standalone.mjs
-                            if ($LASTEXITCODE -ne 0) { throw 'prepare-standalone falló' }
-                        }
-                        $manifest = Get-Content '.next/routes-manifest.json' -Raw | ConvertFrom-Json
-                        if (-not $manifest.rewrites.afterFiles -or $manifest.rewrites.afterFiles.Count -eq 0) { throw 'El build salió sin rewrites de /api' }
+                        if ($LASTEXITCODE -ne 0) { throw "npm run build falló ($buildLog)" }
+                        Verificar-Reescrituras (Get-Content '.next/routes-manifest.json' -Raw)
                     } finally { Pop-Location }
                     $env:PORT = "$puertoFrontend"; $env:HOSTNAME = '127.0.0.1'
                     $f = Start-Process -FilePath 'node' -WorkingDirectory $front -WindowStyle Hidden -PassThru `
