@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { paraguayDate } from "./task-model";
 
 /**
  * Conformity signed on the device at hand. Face to face the operator holds the phone and the signer
@@ -18,9 +19,7 @@ export function SignaturePad({
   const canvas = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
   const [signerName, setSignerName] = useState("");
-  const [signedOn, setSignedOn] = useState(() =>
-    new Date().toISOString().slice(0, 10),
-  );
+  const [signedOn, setSignedOn] = useState(() => paraguayDate());
   const [drawn, setDrawn] = useState(false);
 
   function context() {

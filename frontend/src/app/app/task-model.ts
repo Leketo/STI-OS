@@ -84,6 +84,22 @@ export const STAGES = [
   },
 ] as const;
 export const MAX_PHOTOS = 5;
+
+/**
+ * The calendar day in Paraguay (America/Asuncion) at an instant, as YYYY-MM-DD. The signature proposes this
+ * date at any hour, whatever zone or clock settings the device has (N-16): toISOString gave the UTC day, which
+ * from 21:00 in Paraguay is already tomorrow.
+ */
+export function paraguayDate(instant: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Asuncion",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(instant);
+  const part = (type: string) => parts.find((p) => p.type === type)?.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
 export const isOperator = (role: Role) =>
   role === "ADMIN" || role === "SUPERVISOR";
 export const isOpen = (task: Task) =>

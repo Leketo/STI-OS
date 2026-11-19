@@ -7,6 +7,7 @@ import {
   canUnassign,
   eventLabel,
   finishesOnRemoval,
+  paraguayDate,
 } from "../src/app/app/task-model.ts";
 import { leaveIfSessionEnded } from "../src/app/app/api.ts";
 const task = {
@@ -170,4 +171,26 @@ test("N-15: an ended session sends every read and write to the sign-in screen", 
   for (const status of [200, 400, 403, 404, 409, 500])
     assert.equal(leaveIfSessionEnded({ status }, go), false);
   assert.deepEqual(visited, ["/login"]);
+});
+test("N-16: the signature proposes the day in Paraguay at any hour, whatever the device zone", () => {
+  const cases = [
+    ["2026-11-19T00:37:00Z", "2026-11-18"], // 21:37 in Asunción, the instant of the 18/11 finding
+    ["2026-11-19T00:00:00Z", "2026-11-18"], // 21:00
+    ["2026-11-19T02:59:59Z", "2026-11-18"], // 23:59:59
+    ["2026-11-19T03:00:00Z", "2026-11-19"], // midnight in Asunción
+    ["2026-11-18T23:59:00Z", "2026-11-18"], // 20:59
+  ];
+  const zone = process.env.TZ;
+  try {
+    for (const deviceZone of ["UTC", "Pacific/Kiritimati", "America/Los_Angeles", "America/Asuncion"]) {
+      process.env.TZ = deviceZone;
+      for (const [instant, day] of cases)
+        assert.equal(paraguayDate(new Date(instant)), day, `${instant} con el dispositivo en ${deviceZone}`);
+    }
+  } finally {
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  }
+  // What the pad proposed before: the UTC day, already tomorrow from 21:00 in Paraguay.
+  assert.equal(new Date("2026-11-19T00:37:00Z").toISOString().slice(0, 10), "2026-11-19");
 });

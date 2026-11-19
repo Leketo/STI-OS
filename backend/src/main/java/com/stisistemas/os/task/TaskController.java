@@ -4,6 +4,7 @@ import com.stisistemas.os.identity.Accounts;
 import java.io.IOException;
 import java.security.Principal;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.Base64;
 import java.util.List;
@@ -31,6 +32,7 @@ public class TaskController {
     private static final Set<String> REQUESTABLE = Set.of("POR_HACER", "EN_PROCESO", "FACTURADO", "ANULADA");
     private static final Set<String> OPEN = Set.of("POR_HACER", "EN_PROCESO");
     private static final int MAX_PHOTOS = 5;
+    private static final ZoneId PARAGUAY = ZoneId.of("America/Asuncion");
     /** Kept in the status event of rule 2; the unassignment request carries no location. */
     static final String FINISHED_BY_UNASSIGNING =
         "Finalizada al quitar a la única persona pendiente: las demás ya habían confirmado. La desasignación no registra ubicación.";
@@ -327,7 +329,8 @@ public class TaskController {
     }
 
     private static LocalDate signedOn(String value) {
-        if (value == null || value.isBlank()) return LocalDate.now();
+        // Without a date from the device, the day in Paraguay, never the server's zone (N-16).
+        if (value == null || value.isBlank()) return LocalDate.now(PARAGUAY);
         try {
             return LocalDate.parse(value.trim());
         } catch (DateTimeParseException invalid) {
