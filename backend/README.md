@@ -1,6 +1,21 @@
 # STI-OS backend foundation
 
-Local foundation: Java 21, Spring Boot 4.1.2, PostgreSQL, Spring Security and Spring Session JDBC. The API contract is [`api/openapi.yaml`](api/openapi.yaml). The local frontend supports login, account identity and logout; task boards still contain public fictitious data. Task mutations, signatures, GPS, uploads and ERP integration remain pending.
+Java 21, Spring Boot 4.1.2, PostgreSQL, Spring Security and Spring Session JDBC. The API contract is [`api/openapi.yaml`](api/openapi.yaml). Implemented: accounts, clients, projects, the full task domain (states, assignments, confirmations, GPS traceability), photos, client signature and invoicing. Not built: editing a task's title or detail, deleting photos, notifications and the ERP integration.
+
+**Known defects (18/11/2026):** concurrent writes on the same task are not serialized. Two simultaneous confirmations leave a task stuck in `EN_PROCESO`, simultaneous uploads exceed five photos, and a simultaneous second signature answers 500 and leaves an orphan file. Unassigning the last pending assignee also strands the task. Details and reproduction: [`docs/informe-e2e-2026-11-18.md`](../docs/informe-e2e-2026-11-18.md), D1–D4.
+
+## Ephemeral rehearsal environment (recommended for testing)
+
+`scripts/ensayo.ps1` runs the real JARs against a throwaway `postgres:18.6` container, which matches the VPS version. It never touches `output/backend-local`.
+
+```powershell
+./backend/scripts/ensayo.ps1 -Accion Suite                    # mvnw verify against container sti-suite (127.0.0.1:5433), removed afterwards
+./backend/scripts/ensayo.ps1 -Accion Levantar -Frontend prod  # container sti-ensayo (5434), migrator + bootstrap, backend 8099, frontend 3000
+./backend/scripts/ensayo.ps1 -Accion Estado
+./backend/scripts/ensayo.ps1 -Accion Bajar                    # kills processes, removes containers and secrets, checks ports
+```
+
+Levantar refuses to run while a rehearsal is already up. Generated credentials, including the rehearsal ADMIN, are written to `output/ensayo/secretos.json` and removed by Bajar. The JARs are copied out of `target/` before running, so packaging is never blocked by the Windows file lock.
 
 ## Persistent local database and application
 
@@ -34,7 +49,7 @@ If a partial setup fails before `output/backend-local/provisioned` exists, inspe
 
 ## Local verification
 
-Prerequisites: JDK 21 and PostgreSQL binaries. Maven does not need to be installed: the repository carries the wrapper, so `./mvnw` (or `mvnw.cmd`) downloads Maven 3.9.3 into the user's `~/.m2` on first use and installs nothing system-wide. That is what the server should use. `backend/mvnw` is committed with the executable bit and is pinned to LF in `.gitattributes`, because checked out with CRLF it fails on Linux with "bad interpreter". On this workstation Maven selects Java 17 by default, so select Java 21 per process; do not change the machine-wide configuration. Docker is installed but its daemon was unavailable during initial preparation.
+Prerequisites: JDK 21 and PostgreSQL binaries. Note that `start-local.ps1` and `test-local.ps1` call the system `mvn` (Maven 3.9.3 is installed on this workstation), while `ensayo.ps1` and the VPS use the wrapper. Maven itself does not need to be installed: the repository carries the wrapper, so `./mvnw` (or `mvnw.cmd`) downloads Maven 3.9.3 into the user's `~/.m2` on first use and installs nothing system-wide. That is what the server should use. `backend/mvnw` is committed with the executable bit and is pinned to LF in `.gitattributes`, because checked out with CRLF it fails on Linux with "bad interpreter". On this workstation Maven selects Java 17 by default, so select Java 21 per process; do not change the machine-wide configuration. Docker is installed but its daemon was unavailable during initial preparation.
 
 From the repository root in PowerShell:
 
@@ -123,14 +138,14 @@ There is no default production account or seeded production password. The first 
 
 CLIENTE receives only its own company's directory and projects. An unknown or foreign project returns the same 404 status. ADMIN, SUPERVISOR and USUARIO can read the project/client creation catalog, because operators may create requests for any client; this does **not** grant access to other operators' tasks. Project creation is ADMIN only, as described under "Task domain" below.
 
-## Release gates still pending
+## Deployment state and what remains
 
-- Fresh security/reliability review. PostgreSQL 18 parity is **done**, and on 2026-10-27 the whole cycle — migrations, first ADMIN, login, task, photo, signature — ran on the server itself with credentials delivered by systemd's config tree.
-- The public cutover, still untouched: enabling the `/api` proxy, the login rate limit confirmed at 30 attempts per IP per 10 minutes with burst 5, and deploying the frontend. All three replace the currently enabled Nginx site, which is the one serving the demo, so they belong to a single controlled step with a tested rollback.
-- Browser verification of the authenticated task board, the signature pad and photo upload. Their API behaviour was verified over HTTP; the React UI itself has not been exercised in a real browser.
-- A private uploads path on the server, its backup coverage and the DB/uploads consistency question the VPS report already raised. Photos and signatures are files now, not rows.
-- Deployed JAR, health/auth/session/privilege checks, external port test, external restore and rollback exercise before real data.
+The history below this point (12 → 17 → 19 tests, the 26/10 browser checks) is kept as a record. The current state, as of 18/11/2026:
 
-The authentication foundation was committed and pushed to `origin/main` as `91e76d8503fe87f857f0db64ba1ada9d8155ac14`, the client and account onboarding as `673075c`, and the task domain as `4393228`. None of them is deployed. `https://app.stisistemas.com` still serves the earlier demo commit `bef587fbebcf921d39eb5ec2b2572606ec418c7a`. Next verify PostgreSQL 18 compatibility and prepare a reviewed revision for the VPS agent. Keep local credentials and data out of that handoff.
+- **Done:** PostgreSQL 18 parity (19/19 on the VPS on 27/10, and again in the 18.6 container on 18/11), the public cutover with the `/api` proxy and login rate limit, the private uploads path with a backup whose DB/uploads consistency was restored and checked, and browser verification against the deployment (27/10) and against a rehearsal environment with every role (18/11).
+- **Deployed:** backend on loopback `:8080` and frontend `bab6a1c`. The Kanban redesign (`1463560`…`60115ab`) is **not** deployed.
+- **Still pending before real data:** the concurrency defects above, an off-VPS backup, raising HSTS from 300 s, and the server hygiene listed in the 29/10 audit. The tracking list lives in [`CONTINUAR.md`](../CONTINUAR.md).
+
+Keep local credentials and data out of any server handoff.
 
 Version evidence: [Spring Boot requirements](https://docs.spring.io/spring-boot/system-requirements.html) and [4.1.2 Maven Central POM](https://repo.maven.apache.org/maven2/org/springframework/boot/spring-boot-starter-parent/4.1.2/spring-boot-starter-parent-4.1.2.pom), checked on 2026-10-26. SQL uses Spring JDBC explicitly for this small foundation; JPA remains a planned option for the task domain, with no automatic schema generation.

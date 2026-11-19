@@ -1,6 +1,6 @@
 # STI-OS — definiciones funcionales vigentes
 
-Actualizado: 24/10/2026. Este documento registra las decisiones expresas del cliente transmitidas en la conversación y las dudas pendientes. El relevamiento original sigue en [`APP Servicio STI 2026.txt`](../APP%20Servicio%20STI%202026.txt); las decisiones posteriores de este documento prevalecen cuando hay contradicciones.
+Creado el 24/10/2026; última decisión registrada el 27/10/2026. Este documento registra las decisiones expresas del cliente transmitidas en la conversación y las dudas pendientes. El relevamiento original sigue en [`APP Servicio STI 2026.txt`](../APP%20Servicio%20STI%202026.txt); las decisiones posteriores de este documento prevalecen cuando hay contradicciones.
 
 ## Producto y estructura
 
