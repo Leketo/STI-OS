@@ -457,6 +457,50 @@ class AccountsTest {
         assertThat(admin.json("PUT", "/api/accounts/" + UUID.randomUUID(), "{\"name\":\"Nadie\"}", csrf).statusCode()).isEqualTo(404);
     }
 
+    /**
+     * D-88: a finished task is not open, so its assignee may become a customer. If the task is then reopened, the
+     * SUPERVISOR assigns another person, removes the customer and the task runs its course. Meanwhile that customer,
+     * of another company, neither sees nor touches the task: 404 on every task operation.
+     */
+    @Test void aReopenedTaskWhoseAssigneeBecameACustomerOfAnotherCompanyGoesOnWithoutThem() throws Exception {
+        var admin = admin();
+        var supervisor = new Browser(); supervisor.login("supervisor");
+        var person = ready(create(admin, "Pasa a cliente", "USUARIO", null, null));
+        var replacement = ready(create(admin, "Sigue la tarea", "USUARIO", null, null));
+        String task = newTask(supervisor, "Finalizada de quien pasa a cliente");
+        assign(supervisor, task, person.id());
+        assertThat(supervisor.json("POST", "/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        var technician = new Browser(); assertThat(technician.login(person.email(), person.password())).isEqualTo(204);
+        assertThat(technician.json("POST", "/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", technician.csrf()).body()).contains("\"status\":\"FINALIZADO\"");
+
+        // FINALIZADO is not open (D-88): the change to CLIENTE of the other company goes through.
+        assertThat(admin.json("PUT", "/api/accounts/" + person.id(), "{\"role\":\"CLIENTE\",\"clientId\":\"" + COMPANY_B + "\"}", admin.csrf()).statusCode()).isEqualTo(200);
+        assertThat(supervisor.json("POST", "/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        assertThat(count("SELECT count(*) FROM sti.task_assignment WHERE task_id = ?::uuid AND user_id = ?", task, person.id())).isEqualTo(1);
+
+        // Still listed as assignee, the customer of company B cannot see or touch a task of company A.
+        var customer = new Browser(); assertThat(customer.login(person.email(), person.password())).isEqualTo(204);
+        String csrf = customer.csrf();
+        assertThat(customer.get("/api/tasks").body()).doesNotContain(task);
+        assertThat(customer.get("/api/tasks/" + task).statusCode()).isEqualTo(404);
+        assertThat(customer.get("/api/tasks/" + task + "/signature").statusCode()).isEqualTo(404);
+        assertThat(customer.json("POST", "/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", csrf).statusCode()).isEqualTo(404);
+        assertThat(customer.json("POST", "/api/tasks/" + task + "/status", "{\"to\":\"POR_HACER\",\"location\":" + HERE + "}", csrf).statusCode()).isEqualTo(404);
+        assertThat(customer.json("POST", "/api/tasks/" + task + "/assignments", "{\"userId\":\"" + person.id() + "\"}", csrf).statusCode()).isEqualTo(404);
+        assertThat(customer.json("DELETE", "/api/tasks/" + task + "/assignments/" + person.id(), "", csrf).statusCode()).isEqualTo(404);
+        assertThat(customer.json("POST", "/api/tasks/" + task + "/signature", "{\"signerName\":\"X\",\"signedOn\":\"2026-11-19\",\"image\":\"x\",\"location\":" + HERE + "}", csrf).statusCode()).isEqualTo(404);
+        assertThat(status(task)).isEqualTo("EN_PROCESO");
+        assertThat(count("SELECT count(*) FROM sti.task_assignment WHERE task_id = ?::uuid AND user_id = ? AND confirmed_at IS NULL", task, person.id())).isEqualTo(1);
+
+        // The SUPERVISOR assigns another person, removes the customer, and the task runs its course.
+        assign(supervisor, task, replacement.id());
+        assertThat(supervisor.json("DELETE", "/api/tasks/" + task + "/assignments/" + person.id(), "", supervisor.csrf()).statusCode()).isEqualTo(200);
+        assertThat(status(task)).isEqualTo("EN_PROCESO");
+        var next = new Browser(); assertThat(next.login(replacement.email(), replacement.password())).isEqualTo(204);
+        assertThat(next.json("POST", "/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", next.csrf()).body()).contains("\"status\":\"FINALIZADO\"");
+        assertThat(count("SELECT count(*) FROM sti.task_assignment WHERE task_id = ?::uuid", task)).isEqualTo(1);
+    }
+
     // ---------------------------------------------------------------------------------------------- CA-20 (D-84)
 
     @Test void assignedTasksCountWhatTheBoardShowsForThatPerson() throws Exception {
