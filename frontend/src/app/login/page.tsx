@@ -39,10 +39,20 @@ export default function LoginPage() {
         }),
       });
       if (!response.ok) {
+        // 429 is either the sign-in block (N-30) or a server too busy to check one more password (rule 14): in
+        // both the server chose the words and they are shown as they come.
+        const refusal =
+          response.status === 429
+            ? ((await response.json().catch(() => null)) as {
+                message?: unknown;
+              } | null)
+            : null;
         setError(
           response.status === 401
             ? "Correo o contraseña incorrectos."
-            : "No se pudo iniciar sesión.",
+            : typeof refusal?.message === "string"
+              ? refusal.message
+              : "No se pudo iniciar sesión.",
         );
         return;
       }
@@ -100,6 +110,9 @@ export default function LoginPage() {
           <button type="submit" disabled={busy} className="sti-button primary">
             {busy ? "Ingresando…" : "Ingresar"}
           </button>
+          <Link href="/recuperar" className="sti-auth-forgot">
+            ¿Olvidaste tu contraseña?
+          </Link>
         </form>
         <div className="sti-auth-footer">
           <Link href="/demo">Explorar la demostración pública</Link>

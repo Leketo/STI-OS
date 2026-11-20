@@ -2171,3 +2171,53 @@ html.dark .sti-auth {
     align-items: stretch;
   }
 }
+
+/* Corte 2B: recover the password. The eyebrow sits right over the title; the notes are quieter than the form. */
+.sti-auth-card > .sti-eyebrow {
+  margin: 0 0 8px;
+}
+.sti-auth-card h1 svg {
+  vertical-align: -3px;
+  color: var(--sti-green);
+}
+.sti-auth-forgot {
+  justify-self: center;
+  font-size: var(--sti-font-sm);
+  color: var(--sti-violet);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 6px 4px;
+}
+.sti-auth-card .sti-auth-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 24px;
+  text-decoration: none;
+}
+.sti-recovery-sent {
+  margin: 24px 0 8px;
+  padding: 16px 18px;
+  border: 1px solid var(--sti-green);
+  border-radius: 12px;
+  color: var(--sti-green);
+  background: var(--sti-green-bg);
+}
+.sti-recovery-sent h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--sti-font-md, 15px);
+  font-weight: 700;
+}
+.sti-recovery-sent p {
+  margin: 8px 0 0;
+  font-size: var(--sti-font-sm);
+  line-height: 1.6;
+}
+.sti-auth-card > .sti-recovery-note {
+  margin: 24px 0 0;
+  font-size: var(--sti-font-xs);
+  line-height: 1.6;
+}

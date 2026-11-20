@@ -27,11 +27,17 @@ export function PasswordForm({
   submitLabel,
   onDone,
   onCancel,
+  send,
 }: {
   requireCurrent: boolean;
   submitLabel: string;
   onDone: () => void;
   onCancel?: () => void;
+  /**
+   * Another way to send the new password. The screen reached from the recovery link has no session and sends it
+   * together with the link's token to its own address. Without it the form changes the signed-in person's password.
+   */
+  send?: (newPassword: string) => Promise<Response>;
 }) {
   const id = useId();
   const [current, setCurrent] = useState("");
@@ -48,14 +54,16 @@ export function PasswordForm({
     setBusy(true);
     setError("");
     try {
-      const response = await sendWithCsrf(
-        "POST",
-        "/api/auth/password",
-        requireCurrent
-          ? { currentPassword: current, newPassword: next }
-          : { newPassword: next },
-      );
-      if (leaveIfSessionEnded(response)) return;
+      const response = send
+        ? await send(next)
+        : await sendWithCsrf(
+            "POST",
+            "/api/auth/password",
+            requireCurrent
+              ? { currentPassword: current, newPassword: next }
+              : { newPassword: next },
+          );
+      if (!send && leaveIfSessionEnded(response)) return;
       setCurrent("");
       if (!response.ok) {
         setError(await refusalMessage(response));

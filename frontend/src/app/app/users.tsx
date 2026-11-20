@@ -29,7 +29,8 @@ import { EmptyState, Panel } from "./workspace-ui";
 import type { WorkspaceData } from "./use-workspace-data";
 
 /** An initial password just drawn by the server. It lives only while its panel is open (rule 1). */
-type Issued = { name: string; password: string };
+/** N-32: a reset says so. The panel after "Restablecer" is not the one after creating the account. */
+type Issued = { name: string; password: string; reset?: boolean };
 const ROLES = Object.keys(ROLE_LABELS) as Role[];
 
 /**
@@ -281,7 +282,7 @@ export function UsersView({
           }}
           onReset={(name, password) => {
             setEditing(null);
-            setIssued({ name, password });
+            setIssued({ name, password, reset: true });
             void changed();
           }}
           onOpenPerson={(id) => {
@@ -515,7 +516,11 @@ function IssuedPanel({ issued, onClose }: { issued: Issued; onClose: () => void 
   }
   return (
     <Panel
-      title={`${issued.name} ya puede ingresar`}
+      title={
+        issued.reset
+          ? `Nueva contraseña inicial para ${issued.name}`
+          : `${issued.name} ya puede ingresar`
+      }
       eyebrow="CONTRASEÑA INICIAL"
       onClose={onClose}
     >
@@ -523,6 +528,11 @@ function IssuedPanel({ issued, onClose }: { issued: Issued; onClose: () => void 
         Pasásela a la persona por un medio seguro. Deja de servir cuando ingresa
         y elige la suya.
       </p>
+      {issued.reset && (
+        <p className="sti-form-help">
+          La anterior ya no sirve y se cerraron sus sesiones.
+        </p>
+      )}
       <div className="sti-secret">
         <code aria-label="Contraseña inicial">{issued.password}</code>
         <button

@@ -9,10 +9,13 @@ import { paraguayDate } from "./task-model";
  */
 export function SignaturePad({
   busy,
+  error,
   onCancel,
   onSign,
 }: {
   busy: boolean;
+  /** QA-002: why signing was refused, shown next to the button that was pressed, not at the top of the panel. */
+  error?: string;
   onCancel: () => void;
   onSign: (signerName: string, signedOn: string, image: string) => void;
 }) {
@@ -144,6 +147,11 @@ export function SignaturePad({
           Cancelar
         </button>
       </div>
+      {error && (
+        <p role="alert" className="sti-inline-message">
+          {error}
+        </p>
+      )}
     </form>
   );
 }

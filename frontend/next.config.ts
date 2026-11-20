@@ -23,6 +23,19 @@ const nextConfig: NextConfig = {
       { source: '/api/tasks', destination: `${origin.origin}/api/tasks` },
     ];
   },
+  // Rule 4: the page that receives the recovery link sends no referrer and is never kept. The link's token is
+  // after the # and never reaches a server, and this keeps it from leaving the page in any other way.
+  async headers() {
+    return [
+      {
+        source: '/nueva-contrasena',
+        headers: [
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'Cache-Control', value: 'no-store' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

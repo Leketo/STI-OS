@@ -114,6 +114,7 @@ export function TaskBoard({
   const [detailError, setDetailError] = useState("");
   const detailRequest = useRef(0);
   const [signing, setSigning] = useState(false);
+  const [signError, setSignError] = useState("");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(
     null,
   );
@@ -195,6 +196,7 @@ export function TaskBoard({
     setSelectedId(taskId);
     setOpened(null);
     setSigning(false);
+    setSignError("");
     setPanelMessage("");
     void readDetail(taskId);
   }
@@ -203,6 +205,7 @@ export function TaskBoard({
     setSelectedId("");
     setOpened(null);
     setSigning(false);
+    setSignError("");
   }
 
   async function act(
@@ -374,7 +377,10 @@ export function TaskBoard({
             <button
               className="sti-button primary"
               disabled={!!busy}
-              onClick={() => setSigning(true)}
+              onClick={() => {
+                setSignError("");
+                setSigning(true);
+              }}
             >
               <FileCheck2 size={16} />
               Firmar conformidad
@@ -1263,8 +1269,13 @@ export function TaskBoard({
             {signing && (
               <SignaturePad
                 busy={!!busy}
-                onCancel={() => setSigning(false)}
+                error={signError}
+                onCancel={() => {
+                  setSignError("");
+                  setSigning(false);
+                }}
                 onSign={async (signerName, signedOn, image) => {
+                  setSignError("");
                   const ok = await act(
                     selected,
                     async () =>
@@ -1281,6 +1292,14 @@ export function TaskBoard({
                         : errorFor(response),
                   );
                   if (ok) setSigning(false);
+                  else {
+                    // QA-002: the refusal shows beside "Firmar", so nobody has to scroll up to find out why.
+                    setSignError(
+                      data.mutationError.current ||
+                        "No se pudo completar la operación.",
+                    );
+                    setPanelMessage("");
+                  }
                 }}
               />
             )}
