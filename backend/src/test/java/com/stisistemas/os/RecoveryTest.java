@@ -347,12 +347,36 @@ class RecoveryTest {
     @Test void aNewRequestCancelsTheOneStillWaiting() throws Exception {
         String email = unique("reemplazo");
         UUID id = account(email, "Rosa Reemplazo", true, false);
+        mail.purgeEmailFromAllMailboxes();
         recover(email);
         recover(email);
+        // DEV-05: the request writes the same single row with or without an account; the worker does the replacing.
         assertThat(owner.queryForList("SELECT status || '/' || coalesce(reason, '-') FROM sti.mail_outbox WHERE account_id = ? ORDER BY created_at", String.class, id))
-            .containsExactly("DESCARTADO/REEMPLAZADO", "PENDIENTE/-");
+            .containsExactly("PENDIENTE/-", "PENDIENTE/-");
         worker.processDue();
+        assertThat(owner.queryForList("SELECT status || '/' || coalesce(reason, '-') FROM sti.mail_outbox WHERE account_id = ? ORDER BY created_at", String.class, id))
+            .containsExactly("DESCARTADO/REEMPLAZADO", "ENVIADO/-");
         assertThat(sent()).as("one mail, not two").hasSize(1);
+    }
+
+    @Test void anOlderRequestWaitingForARetryDoesNotGoOutAfterTheNewerOne() throws Exception {
+        String email = unique("reintento");
+        UUID id = account(email, "Ramiro Reintento", true, false);
+        mail.purgeEmailFromAllMailboxes();
+        recover(email);
+        // The older row is put off, as after a failed attempt; the newer one is due now.
+        owner.update("UPDATE sti.mail_outbox SET next_attempt_at = clock_timestamp() + interval '10 minutes' WHERE account_id = ?", id);
+        recover(email);
+        worker.processDue();
+        assertThat(mail.waitForIncomingEmail(5000, 1)).isTrue();
+        String newer = MailSupport.link(sent()[0]);
+        // Now the older one comes due: it is dropped, and the newer link keeps serving.
+        owner.update("UPDATE sti.mail_outbox SET next_attempt_at = clock_timestamp() WHERE account_id = ? AND status = 'PENDIENTE'", id);
+        worker.processDue();
+        assertThat(owner.queryForList("SELECT status || '/' || coalesce(reason, '-') FROM sti.mail_outbox WHERE account_id = ? ORDER BY created_at", String.class, id))
+            .containsExactly("DESCARTADO/REEMPLAZADO", "ENVIADO/-");
+        assertThat(sent()).as("one mail, not two").hasSize(1);
+        assertThat(check(MailSupport.token(newer)).statusCode()).isEqualTo(204);
     }
 
     @Test void confirmingDropsWhatWasStillWaiting() throws Exception {

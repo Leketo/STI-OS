@@ -83,6 +83,13 @@ public class RecoveryMailWorker {
         if (due.isEmpty()) return false;
         Row row = due.get(0);
 
+        // A newer request of the same account, waiting or already sent, replaces this one (DEV-05: the request no
+        // longer does it). Also covers an older row that was waiting for a retry: it must not go out after the newer
+        // mail and kill its link.
+        Boolean replaced = jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM sti.mail_outbox n, sti.mail_outbox o "
+            + "WHERE o.id = ? AND n.account_id = o.account_id AND n.status IN ('PENDIENTE', 'ENVIADO') "
+            + "AND (n.created_at, n.id) > (o.created_at, o.id))", Boolean.class, row.id());
+        if (Boolean.TRUE.equals(replaced)) { finish(row, "DESCARTADO", "REEMPLAZADO"); return true; }
         if (row.expired()) { finish(row, "DESCARTADO", "VENCIDO"); log.info("Correo descartado: no salió en 60 minutos (cuenta {})", row.accountId()); return true; }
         var people = jdbc.query("SELECT display_name, email, enabled FROM sti.app_user WHERE id = ?",
             (rs, n) -> new Person(rs.getString(1), rs.getString(2), rs.getBoolean(3)), row.accountId());

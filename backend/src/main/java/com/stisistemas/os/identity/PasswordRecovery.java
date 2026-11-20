@@ -34,7 +34,6 @@ public class PasswordRecovery {
     static final Duration REQUEST_WINDOW = Duration.ofHours(1);
     static final String INVALID_LINK = "Este enlace ya no sirve. Pedí uno nuevo.";
     /** Fixed account id that matches nothing: lets a request without an account run the same statement. */
-    private static final UUID NO_ACCOUNT = new UUID(0L, 0L);
     private static final Pattern TOKEN_SHAPE = Pattern.compile("^[A-Za-z0-9_-]{43}$");
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -81,10 +80,10 @@ public class PasswordRecovery {
         else { status = "PENDIENTE"; reason = null; }
         boolean pending = "PENDIENTE".equals(status);
 
-        // A new request cancels the one still waiting. The statement runs every time; it only matches when this
-        // request is itself going to be sent.
-        jdbc.update("UPDATE sti.mail_outbox SET status = 'DESCARTADO', reason = 'REEMPLAZADO', finished_at = clock_timestamp() "
-            + "WHERE account_id = ? AND status = 'PENDIENTE' AND ?", account == null ? NO_ACCOUNT : account.id(), pending);
+        // DEV-05: the request does the same work whatever the email is: one row, nothing else. A new request still
+        // cancels the one waiting, but the mail worker does it when it picks the older row (RecoveryMailWorker), so
+        // replacing a row never costs time here. Writing the replacement here made the 2nd and 3rd request of an
+        // existing account measurably slower (CA-38).
         // D-160: with no account the row keeps nothing of what was typed, in clear or hashed.
         jdbc.update("INSERT INTO sti.mail_outbox (id, account_id, kind, status, reason, finished_at) VALUES "
             + "(?, ?, 'RECUPERACION', ?, ?, CASE WHEN ? THEN NULL ELSE clock_timestamp() END)",
