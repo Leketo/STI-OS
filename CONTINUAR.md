@@ -1,6 +1,6 @@
 # STI-OS — traspaso de sesión
 
-Actualizado: **19/11/2026**. Es el documento vivo y se lee primero. El índice de todo lo demás está en [STACK.md](STACK.md); las reglas de trabajo, en [CLAUDE.md](CLAUDE.md); el registro de entregas y decisiones, en [coordinacion/](coordinacion/).
+Actualizado: **20/11/2026**. Es el documento vivo y se lee primero. El índice de todo lo demás está en [STACK.md](STACK.md); las reglas de trabajo, en [CLAUDE.md](CLAUDE.md); el registro de entregas y decisiones, en [coordinacion/](coordinacion/).
 La versión anterior de este archivo (25 al 27/10, con todo el detalle del despliegue en el VPS) está en git: `git show e954689:CONTINUAR.md`.
 
 ## Qué es
@@ -17,11 +17,18 @@ STI-OS es la aplicación de órdenes de servicio de STI Sistemas, una empresa de
 
 Las reglas de negocio están en [docs/definiciones-funcionales.md](docs/definiciones-funcionales.md) y las técnicas en [backend/README.md](backend/README.md).
 
-## Estado al 19/11/2026
+## Estado al 20/11/2026
 
 **Código:**
 - **Corte 1, "Tareas que no se traban" (ENCARGO-DEV-001 v2):** se entrega como `v0.1.1-candidato.1`. Informe: [docs/informe-corte-1-2026-11-19.md](docs/informe-corte-1-2026-11-19.md). Corrige N-11 a N-17 y aplica D-26. No migra la base. **Publicado** el 19/11 a las 18:15 UTC (E-008).
 - **Corte 2, "Usuarios y contraseñas" (ENCARGO-DEV-002):** se entrega como `v0.2.0-candidato.1`. Informe: [docs/informe-corte-2-2026-11-19.md](docs/informe-corte-2-2026-11-19.md). Pantalla Usuarios, contraseña inicial generada por el sistema, primer ingreso, "Mi contraseña", filtro de estado. **Trae la migración V4** (solo agrega) y la reescritura `/api/accounts/:path*`. **Aceptado por el PO (E-007). Publicado** el 19/11 a las 18:50 UTC (E-008).
+- **Corte 2B, "Recuperar la contraseña y frenar intentos" (ENCARGO-DEV-003):** se entrega como `v0.2.1-candidato.1`. Informe: [docs/informe-corte-2b-2026-11-20.md](docs/informe-corte-2b-2026-11-20.md).
+  - Qué trae: recuperación por correo con enlace de un solo uso, bloqueo tras 5 fallos, tope de comprobaciones simultáneas, JSON propio en los errores de `/api`, commit en el JAR, y migrador y bootstrap leyendo credenciales de archivo (N-35).
+  - **Trae la migración V5** (solo agrega).
+  - **Credenciales nuevas del proceso web** por `LoadCredential`: `STI_MAIL_HOST`, `STI_MAIL_PORT`, `STI_MAIL_USERNAME`, `STI_MAIL_FROM`, `STI_MAIL_PASSWORD` y `STI_PUBLIC_URL`.
+  - `STI_AUTH_MAX_CONCURRENT_CHECKS` es opcional y vale 4; la calibración recomienda 2.
+  - Defecto propio DEV-05 (E-012), corregido.
+  - **No publicado.**
 - Cada corte trabaja en su rama (el 2 en `feat/usuarios-y-contrasenas`); `main` avanza solo por fast-forward.
 
 **Producción** (`https://app.stisistemas.com`), según lo que informó el PO el 19/11 (E-008). El desarrollo no lo verificó: no toca el servidor.
@@ -42,6 +49,11 @@ Las reglas de negocio están en [docs/definiciones-funcionales.md](docs/definici
 **Pruebas:**
 - 18/11, antes del corte: [docs/informe-e2e-2026-11-18.md](docs/informe-e2e-2026-11-18.md). Suite 19/19, matriz por API 110 OK y 4 fallas.
 - 19/11, corte 1: suite 25/25 contra PG 18.6 y matriz por API 120 OK y 0 fallas. Detalle y límites en el informe del corte.
+- 20/11, corte 2B, sobre el commit final:
+  - suite 78/78 contra PG 18.6;
+  - matriz por API 256 OK y 0 fallas;
+  - recuperación de punta a punta con GreenMail 54 OK;
+  - JAR de v0.2.0 contra el esquema 5: 194 OK.
 - 19/11, corte 2: suite 41/41 contra PG 18.6, matriz por API 194 OK y 0 fallas, y la matriz del corte 1 con el JAR de v0.1.1 contra el esquema 4: 120 OK.
 
 ## Lo próximo, en orden
@@ -49,12 +61,8 @@ Las reglas de negocio están en [docs/definiciones-funcionales.md](docs/definici
 Los defectos del 18/11 se numeran N-11 a N-18 (antes D1 a D8). Las decisiones del PO usan la serie D-NN; los defectos propios del desarrollo, DEV-NN.
 
 1. **QA de los cortes 1 y 2:** 0/11 y 0/16. Empieza la noche del 19/11. Los dos cortes ya están publicados. Si hiciera falta volver a v0.1.1, esa vuelta tiene los dos límites escritos en el informe del corte 2 (CA-25).
-2. **Corte 2B, sin encargo todavía. No se empieza:**
-   - N-30, límite de intentos fallidos de ingreso;
-   - N-32, texto propio del panel tras restablecer;
+2. **Corte 2B: entregado como `v0.2.1-candidato.1` (E-013), pendiente de QA y de la decisión de pase.** Quedan del listado viejo, sin encargo:
    - actualizar el doble de API `frontend/scripts/ui-fixture-server.mjs`;
-   - D-101, que el JAR diga de qué commit salió;
-   - N-35, que el migrador lea la contraseña del directorio de credenciales y no de una variable de entorno;
    - D-102: `allowScripts` de `unrs-resolver` **no se aprueba**.
 
    N-31 (desborde de "Filtros activos" a 360–370 px) va en el corte 3.
@@ -84,6 +92,8 @@ Los defectos del 18/11 se numeran N-11 a N-18 (antes D1 a D8). Las decisiones de
 ./backend/scripts/ensayo.ps1 -Accion Interfaz     # build, lint, tipos, test:ui y npm audit con Node 24.22.1
 ./backend/scripts/ensayo.ps1 -Accion Levantar     # base 5434, backend 8099, interfaz en contenedor en 3000
 node backend/scripts/ensayo/matriz-api.mjs output/ensayo   # matriz de reglas por API con datos falsos
+# -Correo levanta un SMTPS falso (GreenMail) y entrega el correo como archivos de credenciales;
+# después: node backend/scripts/ensayo/recuperacion-e2e.mjs output/ensayo
 ./backend/scripts/ensayo.ps1 -Accion Bajar        # borra contenedores, secretos y libera puertos
 ```
 
