@@ -15,6 +15,15 @@ export const metadata: Metadata = {
   title: "STI-OS | Órdenes de Servicio y Proyectos STI",
   description:
     "Gestión de proyectos, órdenes de servicio técnico y mantenimiento - STI Sistemas",
+  // R-24 (D-215): the four links LEEME.txt of the STI S.R.L. kit asks for, on every page.
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
+  manifest: "/site.webmanifest",
 };
 
 export const viewport: Viewport = {

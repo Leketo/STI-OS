@@ -18,7 +18,7 @@ import { AdminOnboarding } from "./admin-onboarding";
 import { LogoutButton } from "./logout-button";
 import { PasswordForm } from "./password-form";
 import { UsersView } from "./users";
-import { Panel, ThemeControl, WorkspaceMark } from "./workspace-ui";
+import { Panel, ThemeControl, BrandLogo } from "./workspace-ui";
 import { initials, ROLE_LABELS as roleLabels, type Account } from "./task-model";
 import { useWorkspaceData } from "./use-workspace-data";
 
@@ -150,11 +150,7 @@ export function Workspace({ account }: { account: Account }) {
         aria-modal={mobileNav || undefined}
       >
         <a className="sti-brand" href="/app">
-          <WorkspaceMark />
-          <span>
-            STI<span className="sti-brand-dot">.</span>OS
-            <small>Tu operación, en orden.</small>
-          </span>
+          <BrandLogo />
         </a>
         <button
           className="sti-mobile-close sti-icon-button"

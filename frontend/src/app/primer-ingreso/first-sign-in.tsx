@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { LogoutButton } from "../app/logout-button";
 import { PasswordForm } from "../app/password-form";
-import { ThemeControl, WorkspaceMark } from "../app/workspace-ui";
+import { ThemeControl, BrandLogo } from "../app/workspace-ui";
 
 export function FirstSignIn({ name }: { name: string }) {
   const router = useRouter();
@@ -11,11 +11,7 @@ export function FirstSignIn({ name }: { name: string }) {
     <main className="sti-auth">
       <div className="sti-auth-card">
         <div className="sti-brand">
-          <WorkspaceMark />
-          <span>
-            STI<span className="sti-brand-dot">.</span>OS
-            <small>Tu operación, en orden.</small>
-          </span>
+          <BrandLogo />
         </div>
         <h1>Elegí tu contraseña</h1>
         <p>

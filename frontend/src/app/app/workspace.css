@@ -1491,12 +1491,159 @@ html.dark .sti-auth {
 .sti-sign-form .sti-field {
   margin-bottom: 15px;
 }
-.sti-sign-form canvas {
+/* Corte 3A (R-20, R-22): in the panel, the date and one large button; the signature opens in full screen. */
+.sti-sign-open {
+  display: grid;
+  gap: 6px;
   width: 100%;
-  touch-action: none;
+  min-height: 120px;
+  place-content: center;
+  text-align: center;
   border: 1px dashed var(--sti-control-border);
-  border-radius: 8px;
+  border-radius: 10px;
+  background: var(--sti-surface);
+  color: var(--sti-text);
+  cursor: pointer;
+}
+.sti-sign-open strong {
+  font-size: 18px;
+}
+.sti-sign-open span {
+  color: var(--sti-muted);
+  font-size: var(--sti-font-sm);
+}
+.sti-sign-result {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.sti-sign-result img {
+  width: 100%;
+  max-height: 160px;
+  object-fit: contain;
   background: #ffffff;
+  border: 1px solid var(--sti-border);
+  border-radius: 8px;
+}
+.sti-sign-result p {
+  font-size: var(--sti-font-sm);
+}
+.sti-link-button {
+  background: none;
+  border: 0;
+  padding: 6px 0;
+  min-height: 44px;
+  color: var(--sti-violet);
+  font-size: var(--sti-font-sm);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.sti-sign-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: var(--sti-surface);
+  color: var(--sti-text);
+  padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+.sti-sign-screen-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sti-sign-screen-head h2 {
+  font-size: 18px;
+  font-weight: 750;
+}
+.sti-sign-screen-head p {
+  color: var(--sti-muted);
+  font-size: var(--sti-font-sm);
+}
+.sti-sign-rotate {
+  margin: 8px 0 0;
+  font-size: var(--sti-font-xs);
+  color: var(--sti-muted);
+}
+.sti-sign-screen-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 12px;
+}
+.sti-sign-area {
+  position: relative;
+  flex: 1;
+  min-height: 180px;
+  border: 1px dashed var(--sti-control-border);
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+}
+.sti-sign-area canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  z-index: 1;
+}
+.sti-sign-guide {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 22%;
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+.sti-sign-guide span {
+  border-top: 2px solid #9ca3af;
+}
+.sti-sign-guide small {
+  text-align: center;
+  color: #6b7280;
+  font-size: 13px;
+}
+.sti-sign-side {
+  display: grid;
+  gap: 12px;
+}
+.sti-sign-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.sti-sign-buttons .sti-button {
+  min-height: 48px;
+  justify-content: center;
+}
+/* Landscape: the signature takes the width; clarification and buttons go to a side column. */
+@media (orientation: landscape) and (max-height: 600px) {
+  .sti-sign-rotate {
+    display: none;
+  }
+  .sti-sign-screen-body {
+    flex-direction: row;
+  }
+  .sti-sign-side {
+    width: min(260px, 34%);
+    align-content: end;
+  }
+  .sti-sign-buttons {
+    grid-template-columns: 1fr;
+  }
+}
+@media (orientation: landscape) and (min-height: 601px) {
+  .sti-sign-rotate {
+    display: none;
+  }
 }
 .sti-sign-form .sti-action-group {
   margin-top: 12px;
@@ -2220,4 +2367,62 @@ html.dark .sti-auth {
   margin: 24px 0 0;
   font-size: var(--sti-font-xs);
   line-height: 1.6;
+}
+
+/* Corte 3A (R-23): the reason of a task closed as not billable. */
+.sti-reason {
+  display: grid;
+  gap: 10px;
+  border: 0;
+  padding: 0;
+  margin: 0 0 25px;
+}
+.sti-reason legend {
+  font-size: var(--sti-font-sm);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.sti-reason-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--sti-control-border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.sti-reason-option:has(input:checked) {
+  border-color: var(--sti-violet);
+  background: var(--sti-violet-bg);
+}
+.sti-reason-option input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--sti-violet);
+}
+
+/* R-24 (D-215): the STI S.R.L. logo by theme, with the product name small below. */
+.sti-logo {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+.sti-logo img {
+  display: block;
+  width: 172px;
+  max-width: 100%;
+  height: auto;
+}
+.sti-logo small {
+  margin-top: 0;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+.sti-logo-night,
+html.dark .sti-logo-day {
+  display: none !important;
+}
+html.dark .sti-logo-night {
+  display: block !important;
 }

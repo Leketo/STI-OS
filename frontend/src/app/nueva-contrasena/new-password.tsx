@@ -5,7 +5,7 @@ import Link from "next/link";
 import { CircleCheck } from "lucide-react";
 import { sendWithCsrf } from "../app/api";
 import { PasswordForm } from "../app/password-form";
-import { ThemeControl, WorkspaceMark } from "../app/workspace-ui";
+import { ThemeControl, BrandLogo } from "../app/workspace-ui";
 
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
 type Phase = "checking" | "form" | "done" | "invalid" | "unavailable";
@@ -15,11 +15,7 @@ function Card({ children }: { children: React.ReactNode }) {
     <main className="sti-auth">
       <div className="sti-auth-card">
         <div className="sti-brand">
-          <WorkspaceMark />
-          <span>
-            STI<span className="sti-brand-dot">.</span>OS
-            <small>Tu operación, en orden.</small>
-          </span>
+          <BrandLogo />
         </div>
         {children}
         <div className="sti-auth-footer">

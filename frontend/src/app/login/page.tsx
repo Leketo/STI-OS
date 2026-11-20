@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ThemeControl, WorkspaceMark } from "../app/workspace-ui";
+import { ThemeControl, BrandLogo } from "../app/workspace-ui";
+import { signInRefusal } from "../app/api";
 
 type Csrf = { token: string; headerName: string };
 
@@ -23,6 +24,11 @@ export default function LoginPage() {
         credentials: "same-origin",
         cache: "no-store",
       });
+      if (tokenResponse.status === 429) {
+        // N-45: the web server in front may refuse before the application sees the request.
+        setError(signInRefusal(429, null));
+        return;
+      }
       if (!tokenResponse.ok) throw new Error("unavailable");
       const csrf = (await tokenResponse.json()) as Csrf;
       const response = await fetch("/api/auth/login", {
@@ -39,21 +45,11 @@ export default function LoginPage() {
         }),
       });
       if (!response.ok) {
-        // 429 is either the sign-in block (N-30) or a server too busy to check one more password (rule 14): in
-        // both the server chose the words and they are shown as they come.
         const refusal =
           response.status === 429
-            ? ((await response.json().catch(() => null)) as {
-                message?: unknown;
-              } | null)
+            ? await response.json().catch(() => null)
             : null;
-        setError(
-          response.status === 401
-            ? "Correo o contraseña incorrectos."
-            : typeof refusal?.message === "string"
-              ? refusal.message
-              : "No se pudo iniciar sesión.",
-        );
+        setError(signInRefusal(response.status, refusal));
         return;
       }
       router.replace("/app");
@@ -69,11 +65,7 @@ export default function LoginPage() {
     <main className="sti-auth">
       <div className="sti-auth-card">
         <div className="sti-brand">
-          <WorkspaceMark />
-          <span>
-            STI<span className="sti-brand-dot">.</span>OS
-            <small>Tu operación, en orden.</small>
-          </span>
+          <BrandLogo />
         </div>
         <h1>Bienvenido de nuevo.</h1>
         <p>Ingresá para continuar con tu trabajo.</p>

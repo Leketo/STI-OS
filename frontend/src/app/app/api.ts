@@ -46,6 +46,22 @@ export function leaveIfSessionEnded(
   return true;
 }
 
+/**
+ * What the sign-in screen says when the server refuses. A 429 is either the sign-in block (N-30) or a server too
+ * busy to check one more password (rule 14): when the application answered, its words are shown as they come.
+ * When the web server in front answered instead (an HTML page, no JSON of the application), N-45: a fixed text.
+ */
+export function signInRefusal(status: number, body: unknown): string {
+  if (status === 401) return "Correo o contraseña incorrectos.";
+  if (status === 429) {
+    const message = (body as { message?: unknown } | null)?.message;
+    return typeof message === "string" && message.trim()
+      ? message
+      : "Demasiados intentos. Esperá un minuto y probá de nuevo.";
+  }
+  return "No se pudo iniciar sesión.";
+}
+
 export function errorFor(response: Response): string {
   if (response.status === 400) return "Revisá los datos ingresados.";
   if (response.status === 404) return "La tarea ya no está disponible para tu cuenta.";

@@ -14,8 +14,12 @@ import {
   visibleStatuses,
   personOptions,
   assignable,
+  chooseMobileStage,
+  stageOf,
+  statusLabel,
+  STAGES,
 } from "../src/app/app/task-model.ts";
-import { leaveIfSessionEnded } from "../src/app/app/api.ts";
+import { leaveIfSessionEnded, signInRefusal } from "../src/app/app/api.ts";
 const task = {
   id: "t",
   status: "POR_HACER",
@@ -48,7 +52,7 @@ test("finishing requires the last outstanding personal confirmation, never a dir
     false,
   );
 });
-test("only administrators can invoice a signed, finished task", () => {
+test("D-207: administrators and supervisors invoice a signed, finished task", () => {
   for (const status of ["POR_HACER", "EN_PROCESO", "FACTURADO", "ANULADA"])
     assert.equal(
       canMove({ ...task, status, signed: true }, "FACTURADO", admin),
@@ -66,7 +70,11 @@ test("only administrators can invoice a signed, finished task", () => {
     ),
     true,
   );
-  for (const account of [supervisor, tech, client])
+  assert.equal(
+    canMove({ ...task, status: "FINALIZADO", signed: true }, "FACTURADO", supervisor),
+    true,
+  );
+  for (const account of [tech, client])
     assert.equal(
       canMove(
         { ...task, status: "FINALIZADO", signed: true },
@@ -75,6 +83,50 @@ test("only administrators can invoice a signed, finished task", () => {
       ),
       false,
     );
+});
+test("R-23: only operators close a finished task as not billable, with or without a signature", () => {
+  for (const signed of [false, true])
+    for (const account of [admin, supervisor])
+      assert.equal(canMove({ ...task, status: "FINALIZADO", signed }, "NO_FACTURABLE", account), true);
+  for (const account of [tech, client])
+    assert.equal(canMove({ ...task, status: "FINALIZADO" }, "NO_FACTURABLE", account), false);
+  for (const status of ["POR_HACER", "EN_PROCESO", "FACTURADO", "NO_FACTURABLE", "ANULADA"])
+    assert.equal(canMove({ ...task, status }, "NO_FACTURABLE", admin), false, status);
+  // It needs a reason, so it is never a drop.
+  assert.equal(canDrop({ ...task, status: "FINALIZADO" }, "NO_FACTURABLE", admin), false);
+});
+test("D-209: only operators bring a closed task back to finished, by its button and not by dragging", () => {
+  for (const status of ["FACTURADO", "NO_FACTURABLE"]) {
+    for (const account of [admin, supervisor])
+      assert.equal(canMove({ ...task, status, signed: true }, "FINALIZADO", account), true, status);
+    for (const account of [tech, client])
+      assert.equal(canMove({ ...task, status }, "FINALIZADO", account), false, status);
+    assert.equal(canDrop({ ...task, status }, "FINALIZADO", admin), false, status);
+  }
+  for (const status of ["POR_HACER", "EN_PROCESO", "ANULADA"])
+    assert.equal(canMove({ ...task, status }, "FINALIZADO", admin), false, status);
+});
+test("rule 7: one column Cerradas holds both closed states, each with its own label", () => {
+  assert.equal(STAGES.find((s) => s.status === "FACTURADO").label, "Cerradas");
+  assert.equal(stageOf("NO_FACTURABLE"), "FACTURADO");
+  assert.equal(stageOf("FACTURADO"), "FACTURADO");
+  assert.equal(stageOf("FINALIZADO"), "FINALIZADO");
+  assert.equal(statusLabel({ status: "FACTURADO" }), "Facturada");
+  assert.equal(statusLabel({ status: "NO_FACTURABLE", closingReason: "USO_INTERNO" }), "No facturable · Uso interno");
+  assert.equal(statusLabel({ status: "NO_FACTURABLE", closingReason: "GARANTIA" }), "No facturable · Garantía");
+  assert.equal(statusLabel({ status: "FINALIZADO" }), "Finalizadas");
+  // On the phone, a board with only a not billable task opens on Cerradas.
+  assert.equal(chooseMobileStage([{ status: "NO_FACTURABLE" }], STAGES, null), "FACTURADO");
+});
+test("the log tells a not billable closing with its reason, and the way back", () => {
+  const base = { id: "e", kind: "ESTADO", actorName: "A", occurredAt: "", locationAbsentReason: null };
+  assert.equal(
+    eventLabel({ ...base, fromStatus: "FINALIZADO", toStatus: "NO_FACTURABLE", closingReason: "GARANTIA" }),
+    "Cerró como no facturable · Garantía",
+  );
+  assert.equal(eventLabel({ ...base, fromStatus: "NO_FACTURABLE", toStatus: "FINALIZADO" }), "Volvió a Finalizadas");
+  assert.equal(eventLabel({ ...base, fromStatus: "FACTURADO", toStatus: "FINALIZADO" }), "Volvió a Finalizadas");
+  assert.equal(eventLabel({ ...base, fromStatus: "FINALIZADO", toStatus: "FACTURADO" }), "Cambió a facturada");
 });
 test("backwards movement is restricted to operators and closed tasks cannot be dragged", () => {
   assert.equal(
@@ -230,8 +282,9 @@ test("rule 7 (D-24): the phone is optional and up to 30 digits, spaces, +, - and
 });
 test("D-85: the status filter offers each role only the states it can see", () => {
   const all = ["POR_HACER", "EN_PROCESO", "FINALIZADO", "FACTURADO"];
-  assert.deepEqual(visibleStatuses("ADMIN"), all);
-  assert.deepEqual(visibleStatuses("SUPERVISOR"), all);
+  // Corte 3A, rule 7: operators also filter by "No facturable".
+  assert.deepEqual(visibleStatuses("ADMIN"), [...all, "NO_FACTURABLE"]);
+  assert.deepEqual(visibleStatuses("SUPERVISOR"), [...all, "NO_FACTURABLE"]);
   for (const role of ["USUARIO", "CLIENTE"])
     assert.deepEqual(visibleStatuses(role), all.filter((s) => s !== "FACTURADO"), role);
 });
@@ -244,4 +297,45 @@ test("D-86 and rule 5: only the ADMIN filters by an inactive person, and nobody 
   assert.deepEqual(personOptions(operators, "ADMIN").map((p) => p.id), ["on", "off", "old"]);
   assert.deepEqual(personOptions(operators, "SUPERVISOR").map((p) => p.id), ["on", "old"]);
   assert.deepEqual(assignable(operators).map((p) => p.id), ["on", "old"]);
+});
+
+test("N-45: a 429 from the web server, without the application's JSON, still tells the person to wait", () => {
+  const wait = "Demasiados intentos. Esperá un minuto y probá de nuevo.";
+  assert.equal(signInRefusal(429, null), wait);
+  assert.equal(signInRefusal(429, {}), wait);
+  assert.equal(signInRefusal(429, { message: "" }), wait);
+  assert.equal(signInRefusal(429, { message: "Probá de nuevo en 10 minutos." }), "Probá de nuevo en 10 minutos.");
+  assert.equal(signInRefusal(401, null), "Correo o contraseña incorrectos.");
+  assert.equal(signInRefusal(500, null), "No se pudo iniciar sesión.");
+});
+
+// Corte 3A (R-20, R-22): full-screen signature.
+import { fit, toArea, toReference, dataUrlBytes, exportWidths, firstThatFits, MAX_SIGNATURE_BYTES } from "../src/app/app/signature-geometry.ts";
+test("turning the phone keeps the strokes: one uniform scale, centred, and back without loss", () => {
+  const portrait = { width: 358, height: 420 };
+  const landscape = { width: 560, height: 300 };
+  const f = fit(portrait, landscape);
+  assert.equal(f.scale, 300 / 420);
+  assert.equal(f.offsetY, 0);
+  assert.ok(f.offsetX > 0);
+  const p = { x: 120, y: 200 };
+  const back = toReference(toArea(p, f), f);
+  assert.ok(Math.abs(back.x - p.x) < 1e-9 && Math.abs(back.y - p.y) < 1e-9);
+  // The same area is the identity.
+  assert.deepEqual(fit(portrait, portrait), { scale: 1, offsetX: 0, offsetY: 0 });
+});
+test("point 14: an image over 1 MiB lowers its resolution, never the limit", () => {
+  assert.equal(MAX_SIGNATURE_BYTES, 1048576);
+  assert.equal(dataUrlBytes("data:image/png;base64,QUJD"), 3);
+  assert.equal(dataUrlBytes("data:image/png;base64,QUI="), 2);
+  const widths = exportWidths();
+  assert.equal(widths[0], 1600);
+  assert.equal(widths.at(-1), 400);
+  for (let i = 1; i < widths.length; i++) assert.ok(widths[i] < widths[i - 1]);
+  // A renderer whose image weighs 1000 bytes per pixel of width: 1600 and 1200 do not fit, 900 does.
+  const tried = [];
+  const image = firstThatFits((w) => { tried.push(w); return "data:image/png;base64," + "A".repeat(Math.ceil((w * 1000 * 4) / 3)); });
+  assert.deepEqual(tried, [1600, 1200, 900]);
+  assert.ok(dataUrlBytes(image) <= MAX_SIGNATURE_BYTES);
+  assert.equal(firstThatFits(() => "data:image/png;base64," + "A".repeat(2_000_000)), null);
 });

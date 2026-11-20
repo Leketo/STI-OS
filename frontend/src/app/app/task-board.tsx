@@ -54,6 +54,10 @@ import {
   assignable,
   personOptions,
   stageLabel,
+  stageOf,
+  statusLabel,
+  isClosed,
+  CLOSING_REASONS,
   STAGES,
   visibleStatuses,
   type Account,
@@ -77,7 +81,14 @@ type PendingAction = {
   to: string;
   title: string;
   description: string;
+  /** Not billable (R-23): the reason is chosen in the dialog, and Confirmar waits for it. */
+  needsReason?: boolean;
 };
+/** Board colour of a state; both closed states sit in "Cerradas" but not billable reads apart. */
+const toneOf = (status: string) =>
+  status === "NO_FACTURABLE"
+    ? "neutral"
+    : (STAGES.find((s) => s.status === status)?.tone ?? "neutral");
 const dateTime = (value: string) =>
   new Intl.DateTimeFormat("es-PY", {
     dateStyle: "medium",
@@ -118,6 +129,7 @@ export function TaskBoard({
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(
     null,
   );
+  const [closingReason, setClosingReason] = useState("");
   const [dragId, setDragId] = useState("");
   const [pendingMove, setPendingMove] = useState<{
     id: string;
@@ -223,26 +235,54 @@ export function TaskBoard({
     else setPanelMessage(success);
     return ok;
   }
-  async function executeMove(task: Task, to: string) {
+  async function executeMove(task: Task, to: string, reason?: string) {
     setPendingMove({ id: task.id, to });
+    const back = to === "FINALIZADO";
     await act(
       task,
       async () =>
         sendWithCsrf("POST", `/api/tasks/${task.id}/status`, {
           to,
           location: await deviceLocation(),
+          ...(reason ? { reason } : {}),
         }),
-      `Tarea ${task.code}: ${stageLabel(to).toLowerCase()}.`,
-      (response) =>
-        response.status === 409 && to === "EN_PROCESO"
-          ? "No se puede iniciar una tarea sin personas asignadas. Asigná al menos una antes de iniciarla."
-          : errorFor(response),
+      back
+        ? `Tarea ${task.code}: volvió a Finalizadas.`
+        : `Tarea ${task.code}: ${statusLabel({ status: to, closingReason: reason }).toLowerCase()}.`,
+      (response) => {
+        if (response.status === 409 && to === "EN_PROCESO")
+          return "No se puede iniciar una tarea sin personas asignadas. Asigná al menos una antes de iniciarla.";
+        // Rule 8: two people closing at once; the server lets one through and tells the other.
+        if (response.status === 409 && back)
+          return "Otra persona ya la volvió a Finalizadas. Actualizá para ver cómo quedó.";
+        if (response.status === 409 && isClosed(to))
+          return "Otra persona ya cerró esta tarea. Actualizá para ver cómo quedó.";
+        return errorFor(response);
+      },
     );
     setPendingMove(null);
   }
   function requestMove(task: Task, to: string) {
     if (to !== "ANULADA" && !canMove(task, to, account)) return;
-    if (to === "ANULADA") {
+    if (to === "NO_FACTURABLE") {
+      setClosingReason("");
+      setPendingAction({
+        task,
+        to,
+        needsReason: true,
+        title: "¿Cerrar como no facturable?",
+        description:
+          "La tarea se cierra sin factura y sale de la vista del técnico y del cliente. Elegí el motivo; queda en el historial.",
+      });
+    } else if (to === "FINALIZADO") {
+      setPendingAction({
+        task,
+        to,
+        title: "¿Volver a Finalizadas?",
+        description:
+          "La tarea vuelve a Finalizadas. Se conservan las confirmaciones del equipo y la firma. El cambio queda en el historial.",
+      });
+    } else if (to === "ANULADA") {
       setPendingAction({
         task,
         to,
@@ -364,6 +404,13 @@ export function TaskBoard({
             Confirmar mi parte
           </button>
         )}
+        {canConfirm(task, account.id) && (
+          // D-199: the browser asks for the location with its own words; these say what it is for.
+          <p className="sti-form-help">
+            Al confirmar se pide tu ubicación. Si la compartís, queda guardada
+            con tu confirmación. Es opcional.
+          </p>
+        )}
         {task.status === "EN_PROCESO" &&
           task.assignees.some((a) => a.id === account.id && a.confirmed) && (
             <span className="sti-status green">
@@ -394,6 +441,24 @@ export function TaskBoard({
           >
             <Check size={16} />
             Marcar facturada
+          </button>
+        )}
+        {allowed("NO_FACTURABLE") && (
+          <button
+            className="sti-button secondary"
+            disabled={!!busy}
+            onClick={() => requestMove(task, "NO_FACTURABLE")}
+          >
+            No facturable
+          </button>
+        )}
+        {allowed("FINALIZADO") && (
+          <button
+            className="sti-button secondary"
+            disabled={!!busy}
+            onClick={() => requestMove(task, "FINALIZADO")}
+          >
+            Volver a Finalizadas
           </button>
         )}
         {allowed("POR_HACER") && (
@@ -485,6 +550,11 @@ export function TaskBoard({
                 </strong>
               </p>
             </div>
+            {isClosed(task.status) && (
+              <span className={`sti-status ${toneOf(task.status)}`}>
+                {statusLabel(task)}
+              </span>
+            )}
             {task.status === "EN_PROCESO" && task.assignees.length > 0 && (
               <div
                 className="sti-progress"
@@ -823,7 +893,7 @@ export function TaskBoard({
               >
                 {stages.map((stage) => {
                   const items = filtered.filter(
-                    (t) => t.status === stage.status,
+                    (t) => stageOf(t.status) === stage.status,
                   );
                   return (
                     <section
@@ -948,9 +1018,9 @@ export function TaskBoard({
                       </td>
                       <td>
                         <span
-                          className={`sti-status ${STAGES.find((s) => s.status === task.status)?.tone ?? "neutral"}`}
+                          className={`sti-status ${toneOf(task.status)}`}
                         >
-                          {stageLabel(task.status)}
+                          {statusLabel(task)}
                         </span>
                       </td>
                       <td>
@@ -1126,9 +1196,9 @@ export function TaskBoard({
         >
           <div className="sti-detail-status">
             <span
-              className={`sti-status ${STAGES.find((s) => s.status === selected.status)?.tone ?? "neutral"}`}
+              className={`sti-status ${toneOf(selected.status)}`}
             >
-              {stageLabel(selected.status)}
+              {statusLabel(selected)}
             </span>
             {selected.signed && (
               <span className="sti-status green">
@@ -1266,8 +1336,14 @@ export function TaskBoard({
             {selected.status === "FACTURADO" && (
               <p className="sti-muted">El servicio está cerrado y facturado.</p>
             )}
+            {selected.status === "NO_FACTURABLE" && (
+              <p className="sti-muted">
+                El servicio está cerrado sin factura ({statusLabel(selected)}).
+              </p>
+            )}
             {signing && (
               <SignaturePad
+                code={selected.code}
                 busy={!!busy}
                 error={signError}
                 onCancel={() => {
@@ -1299,6 +1375,8 @@ export function TaskBoard({
                         "No se pudo completar la operación.",
                     );
                     setPanelMessage("");
+                    // N-43: and only there; the banner at the top of the screen would say it twice.
+                    data.dismissNotice();
                   }
                 }}
               />
@@ -1311,6 +1389,16 @@ export function TaskBoard({
                 {selected.photoCount}/{MAX_PHOTOS}
               </span>
             </div>
+            {isOpen(selected) &&
+              selected.photoCount >= MAX_PHOTOS &&
+              (operator ||
+                isAssigned(selected, account.id) ||
+                account.role === "CLIENTE") && (
+                // QA-001: at the limit the button gives way to the reason there is none.
+                <p className="sti-form-help" role="status">
+                  Llegaste al máximo de {MAX_PHOTOS} fotos.
+                </p>
+              )}
             {isOpen(selected) &&
               selected.photoCount < MAX_PHOTOS &&
               (operator ||
@@ -1435,6 +1523,23 @@ export function TaskBoard({
           busy={!!busy}
         >
           <p className="sti-panel-intro">{pendingAction.description}</p>
+          {pendingAction.needsReason && (
+            <fieldset className="sti-reason">
+              <legend>Motivo</legend>
+              {CLOSING_REASONS.map((reason) => (
+                <label key={reason.value} className="sti-reason-option">
+                  <input
+                    type="radio"
+                    name="closing-reason"
+                    value={reason.value}
+                    checked={closingReason === reason.value}
+                    onChange={() => setClosingReason(reason.value)}
+                  />
+                  {reason.label}
+                </label>
+              ))}
+            </fieldset>
+          )}
           <div className="sti-form-actions">
             <button
               className="sti-button secondary"
@@ -1445,9 +1550,13 @@ export function TaskBoard({
             </button>
             <button
               className={`sti-button ${pendingAction.to === "ANULADA" ? "danger" : "primary"}`}
-              disabled={!!busy}
+              disabled={!!busy || (!!pendingAction.needsReason && !closingReason)}
               onClick={async () => {
-                await executeMove(pendingAction.task, pendingAction.to);
+                await executeMove(
+                  pendingAction.task,
+                  pendingAction.to,
+                  pendingAction.needsReason ? closingReason : undefined,
+                );
                 setPendingAction(null);
               }}
             >

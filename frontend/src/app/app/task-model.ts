@@ -67,9 +67,34 @@ export function phoneProblem(phone: string): string {
 
 /** D-85: the status filter offers each role only the states it can see. Technicians and customers never see invoiced tasks. */
 export function visibleStatuses(role: Role): string[] {
-  return STAGES.map((stage) => stage.status as string).filter(
-    (status) => status !== "FACTURADO" || isOperator(role),
-  );
+  // Corte 3A, rule 7: ADMIN and SUPERVISOR also filter by "No facturable"; the others see no closed task.
+  return isOperator(role)
+    ? [...STAGES.map((stage) => stage.status as string), "NO_FACTURABLE"]
+    : STAGES.map((stage) => stage.status as string).filter((s) => s !== "FACTURADO");
+}
+
+/** Corte 3A (R-23): the two ways a finished task closes. */
+export const CLOSED_STATUSES = ["FACTURADO", "NO_FACTURABLE"] as const;
+export const isClosed = (status: string) =>
+  (CLOSED_STATUSES as readonly string[]).includes(status);
+export const CLOSING_REASONS = [
+  { value: "USO_INTERNO", label: "Uso interno" },
+  { value: "GARANTIA", label: "Garantía" },
+] as const;
+export const reasonLabel = (reason: string | null | undefined) =>
+  CLOSING_REASONS.find((r) => r.value === reason)?.label ?? null;
+
+/** The board column a task goes in: both closed states share "Cerradas". */
+export const stageOf = (status: string) =>
+  status === "NO_FACTURABLE" ? "FACTURADO" : status;
+
+/** The label of a task's state, with the reason when it closed as not billable. */
+export function statusLabel(task: { status: string; closingReason?: string | null }): string {
+  if (task.status === "NO_FACTURABLE") {
+    const reason = reasonLabel(task.closingReason);
+    return reason ? `No facturable · ${reason}` : "No facturable";
+  }
+  return stageLabel(task.status);
 }
 
 /** Board filter by person (D-86): only the ADMIN may filter by an inactive one, whose tasks were kept. */
@@ -96,6 +121,7 @@ export type Task = {
   pending: number;
   photoCount: number;
   signed: boolean;
+  closingReason?: string | null;
 };
 export type Photo = {
   id: string;
@@ -122,6 +148,7 @@ export type TaskEvent = {
   subjectId?: string | null;
   occurredAt: string;
   locationAbsentReason: string | null;
+  closingReason?: string | null;
 };
 export type Detail = Task & {
   events: TaskEvent[];
@@ -150,9 +177,10 @@ export const STAGES = [
   },
   {
     status: "FACTURADO",
-    label: "Facturadas",
+    // Corte 3A: the column holds both closed states (FACTURADO and NO_FACTURABLE).
+    label: "Cerradas",
     tone: "pink",
-    hint: "Servicio cerrado",
+    hint: "Facturadas o no facturables",
   },
 ] as const;
 export const MAX_PHOTOS = 5;
@@ -188,7 +216,7 @@ export function chooseMobileStage(
   if (selected && stages.some((stage) => stage.status === selected))
     return selected;
   return (
-    stages.find((stage) => tasks.some((task) => task.status === stage.status))
+    stages.find((stage) => tasks.some((task) => stageOf(task.status) === stage.status))
       ?.status ??
     stages[0]?.status ??
     "POR_HACER"
@@ -214,10 +242,14 @@ export function canMove(
     return isOperator(account.role);
   if (to === "EN_PROCESO" && task.status === "FINALIZADO")
     return isOperator(account.role);
+  // D-207: ADMIN and SUPERVISOR invoice a finished, signed task.
   if (to === "FACTURADO")
-    return (
-      account.role === "ADMIN" && task.status === "FINALIZADO" && task.signed
-    );
+    return isOperator(account.role) && task.status === "FINALIZADO" && task.signed;
+  // R-23: not billable, from finished, without a signature.
+  if (to === "NO_FACTURABLE")
+    return isOperator(account.role) && task.status === "FINALIZADO";
+  // D-209: "Volver a Finalizadas" from either closed state.
+  if (to === "FINALIZADO") return isOperator(account.role) && isClosed(task.status);
   return false;
 }
 
@@ -259,7 +291,9 @@ export function canDrop(
   to: string,
   account: Pick<Account, "id" | "role">,
 ): boolean {
-  // Finalization is a confirmation, never a direct status write.
+  // Finalization is a confirmation, never a direct status write; a closed task is not dragged (it goes back by
+  // its own button, D-209), and nothing is dragged into not billable, which needs a reason.
+  if (isClosed(task.status) || to === "NO_FACTURABLE") return false;
   return (
     canMove(task, to, account) ||
     (to === "FINALIZADO" && task.pending === 1 && canConfirm(task, account.id))
@@ -268,8 +302,15 @@ export function canDrop(
 
 export function stageLabel(status: string): string {
   return (
+    (
+      {
+        FACTURADO: "Facturada",
+        NO_FACTURABLE: "No facturable",
+        ANULADA: "Anulada",
+      } as Record<string, string>
+    )[status] ??
     STAGES.find((s) => s.status === status)?.label ??
-    (status === "ANULADA" ? "Anulada" : status)
+    status
   );
 }
 export function initials(name: string): string {
@@ -284,6 +325,10 @@ export function initials(name: string): string {
 export function eventLabel(event: TaskEvent): string {
   if (event.kind === "ESTADO" && event.toStatus === "FINALIZADO" && event.subjectId)
     return "Finalizó la tarea al quitar a la única persona pendiente";
+  if (event.kind === "ESTADO" && event.toStatus === "NO_FACTURABLE")
+    return `Cerró como no facturable${reasonLabel(event.closingReason) ? ` · ${reasonLabel(event.closingReason)}` : ""}`;
+  if (event.kind === "ESTADO" && event.toStatus === "FINALIZADO" && event.fromStatus && isClosed(event.fromStatus))
+    return "Volvió a Finalizadas";
   if (event.kind === "ESTADO" && event.toStatus)
     return `Cambió a ${stageLabel(event.toStatus).toLowerCase()}`;
   return (

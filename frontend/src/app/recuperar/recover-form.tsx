@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { LoaderCircle, MailCheck } from "lucide-react";
 import { sendWithCsrf } from "../app/api";
-import { ThemeControl, WorkspaceMark } from "../app/workspace-ui";
+import { ThemeControl, BrandLogo } from "../app/workspace-ui";
 
 /**
  * Boceto 1.6. The answer is the same for every email, so the screen never says whether there is an account: after
@@ -45,11 +45,7 @@ export function RecoverForm() {
     <main className="sti-auth">
       <div className="sti-auth-card">
         <div className="sti-brand">
-          <WorkspaceMark />
-          <span>
-            STI<span className="sti-brand-dot">.</span>OS
-            <small>Tu operación, en orden.</small>
-          </span>
+          <BrandLogo />
         </div>
         <p className="sti-eyebrow">RECUPERAR ACCESO</p>
         <h1>¿Olvidaste tu contraseña?</h1>

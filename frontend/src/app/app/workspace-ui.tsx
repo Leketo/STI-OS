@@ -188,12 +188,18 @@ export function EmptyState({
   );
 }
 
-export function WorkspaceMark() {
+/**
+ * R-24 (D-215): the STI S.R.L. logo, blue on the light theme and silver on the dark one, with the product name
+ * small below. Both images are in the page and CSS shows the one of the theme, so switching never flashes.
+ */
+export function BrandLogo() {
   return (
-    <span className="sti-mark" aria-hidden="true">
-      <span />
-      <span />
-      <span />
+    <span className="sti-logo">
+      {/* eslint-disable-next-line @next/next/no-img-element -- a fixed SVG from /public, nothing to optimise */}
+      <img className="sti-logo-day" src="/marca/logo-azul-transparente.svg" alt="STI S.R.L." width={172} height={30} />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="sti-logo-night" src="/marca/logo-plata-transparente.svg" alt="STI S.R.L." width={172} height={30} />
+      <small>STI-OS</small>
     </span>
   );
 }
