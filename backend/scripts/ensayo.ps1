@@ -210,12 +210,14 @@ switch ($Accion) {
             for ($i = 0; $i -lt 240 -and -not (Test-Path -LiteralPath (Join-Path $mailDir 'listo')); $i++) { Start-Sleep -Milliseconds 500 }
             if (-not (Test-Path -LiteralPath (Join-Path $mailDir 'listo'))) { throw 'El servidor de correo falso no arrancó (logs/correo.out.log)' }
             $srv = @{}; foreach ($line in Get-Content -LiteralPath (Join-Path $mailDir 'servidor.txt')) { $k, $v = $line -split '=', 2; $srv[$k] = $v }
-            # La contraseña SMTP va en un archivo del directorio de credenciales del proceso web (D-163), no en una variable.
+            # D-163: las seis llegan al proceso web como archivos del directorio de credenciales, como LoadCredential
+            # en el servidor; ninguna va en una variable. Lo que se prueba acá es lo que lee la unidad.
             $webCred = Join-Path $root 'credenciales-web'
             New-Item -ItemType Directory -Force -Path $webCred | Out-Null
-            [System.IO.File]::WriteAllText((Join-Path $webCred 'STI_MAIL_PASSWORD'), $srv.password)
-            $mailEnv = @{ STI_MAIL_HOST = 'localhost'; STI_MAIL_PORT = $srv.port; STI_MAIL_USERNAME = $srv.user
-                STI_MAIL_FROM = 'STI-OS <notificaciones@stisistemas.com>'; STI_PUBLIC_URL = "http://127.0.0.1:$puertoFrontend" }
+            $mailFiles = [ordered]@{ STI_MAIL_HOST = 'localhost'; STI_MAIL_PORT = $srv.port; STI_MAIL_USERNAME = $srv.user
+                STI_MAIL_FROM = 'STI-OS <notificaciones@stisistemas.com>'; STI_MAIL_PASSWORD = $srv.password
+                STI_PUBLIC_URL = "http://127.0.0.1:$puertoFrontend" }
+            foreach ($k in $mailFiles.Keys) { [System.IO.File]::WriteAllText((Join-Path $webCred $k), [string]$mailFiles[$k]) }
             # Solo en el ensayo: la JVM confía en el certificado propio del servidor falso. El producto no cambia.
             $jvmExtra = @("-Djavax.net.ssl.trustStore=$(Join-Path $mailDir 'truststore.p12')", "-Djavax.net.ssl.trustStorePassword=$($srv.truststorePassword)", "-Djavax.net.ssl.trustStoreType=PKCS12")
             Write-Output "Servidor de correo falso (GreenMail, SSL) en localhost:$($srv.port); correos en $mailDir"
