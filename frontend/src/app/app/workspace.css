@@ -1539,16 +1539,25 @@ html.dark .sti-auth {
   text-decoration: underline;
   cursor: pointer;
 }
+/* A modal <dialog> (DEV-07): the browser's defaults for a dialog are undone so it covers the whole window. */
 .sti-sign-screen {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
   display: flex;
   flex-direction: column;
   background: var(--sti-surface);
   color: var(--sti-text);
   padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
     max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+.sti-sign-screen:not([open]) {
+  display: none;
 }
 .sti-sign-screen-head {
   display: flex;

@@ -158,6 +158,7 @@ function SignatureScreen({
   const strokes = useRef<Point[][]>(initial?.strokes.map((s) => [...s]) ?? []);
   const reference = useRef<Size | null>(initial?.reference ?? null);
   const drawing = useRef(false);
+  const screen = useRef<HTMLDialogElement>(null);
   const [drawn, setDrawn] = useState(!!initial?.strokes.length);
   const [signerName, setSignerName] = useState(initial?.signerName ?? "");
   const [failure, setFailure] = useState("");
@@ -183,6 +184,15 @@ function SignatureScreen({
     paint(surface, strokes.current, fit(reference.current, size));
   }, [current]);
 
+  // A modal dialog of its own (DEV-07): the task panel is a modal <dialog> in the browser's top layer, so a
+  // plain element with any z-index stays under it. Opened after the panel, this one goes above it.
+  useLayoutEffect(() => {
+    const element = screen.current;
+    if (!element) return;
+    if (!element.open) element.showModal();
+    return () => element.close();
+  }, []);
+
   // Rotating the phone or resizing the window keeps the strokes (point 12 of the order).
   useLayoutEffect(() => {
     redraw();
@@ -191,19 +201,14 @@ function SignatureScreen({
     return () => observer.disconnect();
   }, [redraw]);
 
-  // The page below does not scroll, and Escape closes without saving, as the X.
+  // The page below does not scroll. Escape reaches only this dialog (onCancel) and closes without saving, as the X.
   useEffect(() => {
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = previous;
-      window.removeEventListener("keydown", onKey);
     };
-  }, [onClose]);
+  }, []);
 
   function local(event: React.PointerEvent<HTMLCanvasElement>): Point {
     const box = event.currentTarget.getBoundingClientRect();
@@ -257,11 +262,14 @@ function SignatureScreen({
   }
 
   return createPortal(
-    <div
+    <dialog
+      ref={screen}
       className="sti-sign-screen"
-      role="dialog"
-      aria-modal="true"
       aria-labelledby="sti-sign-screen-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
     >
       <header className="sti-sign-screen-head">
         <div>
@@ -333,7 +341,7 @@ function SignatureScreen({
           </div>
         </div>
       </div>
-    </div>,
+    </dialog>,
     // Inside the workspace, where the day and night colours are defined; fixed, it covers the whole window.
     document.querySelector<HTMLElement>(".sti-workspace") ?? document.body,
   );
