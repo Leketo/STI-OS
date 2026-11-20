@@ -29,6 +29,6 @@
 | 22 | Filtro "No facturable": 7 de 69 tareas, las mismas 7 que hay en la base |
 | 23 | "Marcar facturada" con la firma vigente: "Facturada · Firmada" |
 | 24, 25 | "Volver a Finalizadas" desde Facturada: el diálogo y el resultado. En la base se conservan la firma vigente y la confirmación |
+| 26 | Aviso "Llegaste al máximo de 5 fotos." con 5/5, tras subir cinco PNG falsos |
 
 **De noche el área de firma sigue blanca, a propósito:** la imagen se guarda con trazo oscuro sobre blanco y así se ve igual que en la constancia.
-| 26 | Aviso "Llegaste al máximo de 5 fotos." con 5/5, tras subir cinco PNG falsos |
