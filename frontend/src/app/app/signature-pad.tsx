@@ -267,7 +267,10 @@ function SignatureScreen({
       className="sti-sign-screen"
       aria-labelledby="sti-sign-screen-title"
       onCancel={(event) => {
+        // React carries the event up its own tree, through the portal, to the task panel's onCancel: stop it here
+        // or Escape closes the panel too.
         event.preventDefault();
+        event.stopPropagation();
         onClose();
       }}
     >
