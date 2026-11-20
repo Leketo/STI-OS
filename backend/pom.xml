@@ -9,12 +9,16 @@
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-jdbc</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-session-jdbc</artifactId></dependency>
+    <!-- D-38: recovery mail. The version is the one Spring Boot fixes. -->
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-mail</artifactId></dependency>
     <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId></dependency>
     <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-database-postgresql</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webmvc-test</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.springframework.security</groupId><artifactId>spring-security-test</artifactId><scope>test</scope></dependency>
+    <!-- D-155: a fake mail server for the tests. Test scope only, fixed version, never inside the JAR. -->
+    <dependency><groupId>com.icegreen</groupId><artifactId>greenmail</artifactId><version>2.1.1</version><scope>test</scope></dependency>
   </dependencies>
   <build><plugins>
     <plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId>
@@ -26,5 +30,33 @@
       </execution></executions>
     </plugin>
     <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.5.0</version></plugin>
+    <!-- Tests only: the recovery link test sends a pedido with another Host header, which the JDK's HTTP client refuses
+         unless it is told so. It changes nothing in the application. -->
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+      <configuration><argLine>-Djdk.httpclient.allowRestrictedHeaders=host</argLine></configuration>
+    </plugin>
+    <!-- D-101, D-156: the JAR says which commit it came from. The version is the one Spring Boot fixes.
+         Only four facts are kept: full and short commit, commit date and whether the tree had unsaved changes.
+         No author, no email, no machine, no build user, no repository address, no branch.
+         Without .git the build fails: there is never a JAR without a commit. -->
+    <plugin><groupId>io.github.git-commit-id</groupId><artifactId>git-commit-id-maven-plugin</artifactId>
+      <configuration>
+        <failOnNoGitDirectory>true</failOnNoGitDirectory>
+        <failOnUnableToExtractRepoInfo>true</failOnUnableToExtractRepoInfo>
+        <includeOnlyProperties>
+          <includeOnlyProperty>^git\.commit\.id$</includeOnlyProperty>
+          <includeOnlyProperty>^git\.commit\.id\.abbrev$</includeOnlyProperty>
+          <includeOnlyProperty>^git\.commit\.time$</includeOnlyProperty>
+          <includeOnlyProperty>^git\.dirty$</includeOnlyProperty>
+        </includeOnlyProperties>
+      </configuration>
+    </plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId>
+      <configuration><archive><manifestEntries>
+        <Git-Commit>${git.commit.id}</Git-Commit>
+        <Git-Commit-Time>${git.commit.time}</Git-Commit-Time>
+        <Git-Dirty>${git.dirty}</Git-Dirty>
+      </manifestEntries></archive></configuration>
+    </plugin>
   </plugins></build>
 </project>

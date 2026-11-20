@@ -2,28 +2,58 @@ package com.stisistemas.os;
 
 import com.stisistemas.os.task.TaskConflict;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
+/**
+ * QA-003: every error of /api answers with the application's own JSON: {@code status}, and {@code code} and
+ * {@code message} when there is something to tell. Never the tool's error page, the server's time, the path or an
+ * exception's text.
+ *
+ * <p>The framework's own refusals (unknown address, wrong method, unreadable body, upload too large, a
+ * {@code ResponseStatusException}) go through {@link ResponseEntityExceptionHandler}, whose body is replaced here.
+ * Whatever else escapes is a 500 with only its status; the detail goes to the server log.
+ */
 @RestControllerAdvice
-public class ApiErrors {
-    @ExceptionHandler(UsernameNotFoundException.class)
-    @ResponseStatus(HttpStatus.UNAUTHORIZED)
-    Map<String, Integer> inactiveAccount() { return Map.of("status", 401); }
+public class ApiErrors extends ResponseEntityExceptionHandler {
+    private static final Logger log = LoggerFactory.getLogger(ApiErrors.class);
 
-    /** Without this the container's upload limit surfaces as a server error instead of a size answer. */
-    @ExceptionHandler(MaxUploadSizeExceededException.class)
-    @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
-    Map<String, Integer> uploadTooLarge() { return Map.of("status", 413); }
+    @Override
+    protected ResponseEntity<Object> handleExceptionInternal(Exception exception, Object body, HttpHeaders headers,
+                                                             HttpStatusCode status, WebRequest request) {
+        return json(status.value(), headers);
+    }
+
+    private static ResponseEntity<Object> json(int status, HttpHeaders headers) {
+        var out = new HttpHeaders();
+        if (headers != null) headers.forEach((name, values) -> {
+            // Allow, Retry-After and the like are useful; whatever describes a body that is gone is not.
+            if (!name.equalsIgnoreCase(HttpHeaders.CONTENT_TYPE) && !name.equalsIgnoreCase(HttpHeaders.CONTENT_LENGTH)) out.addAll(name, values);
+        });
+        out.setContentType(MediaType.APPLICATION_JSON);
+        return new ResponseEntity<>(Map.of("status", status), out, HttpStatusCode.valueOf(status));
+    }
+
+    @ExceptionHandler(AuthenticationException.class)
+    ResponseEntity<Object> unauthenticated() { return json(401, null); }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    ResponseEntity<Object> denied() { return json(403, null); }
 
     @ExceptionHandler(TaskConflict.class)
-    @ResponseStatus(HttpStatus.CONFLICT)
+    @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.CONFLICT)
     Map<String, Object> taskConflict(TaskConflict conflict) {
         return Map.of("status", 409, "code", conflict.code(), "message", conflict.getMessage());
     }
@@ -39,9 +69,15 @@ public class ApiErrors {
      * must still be a conflict, never a server error.
      */
     @ExceptionHandler(DuplicateKeyException.class)
-    @ResponseStatus(HttpStatus.CONFLICT)
+    @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.CONFLICT)
     Map<String, Object> duplicate() {
         return Map.of("status", 409, "code", "DUPLICADO",
             "message", "Otra persona registró lo mismo al mismo tiempo. Actualizá la vista.");
+    }
+
+    @ExceptionHandler(Exception.class)
+    ResponseEntity<Object> unexpected(Exception failure) {
+        log.error("Error no previsto en una dirección de /api", failure);
+        return json(500, null);
     }
 }

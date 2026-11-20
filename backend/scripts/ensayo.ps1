@@ -6,7 +6,7 @@ todo limpio. Nunca toca la base de desarrollo persistente (output/backend-local)
   ./backend/scripts/ensayo.ps1 -Accion Levantar [-Compilar] [-Frontend contenedor|prod|dev|ninguno]
   ./backend/scripts/ensayo.ps1 -Accion Estado
   ./backend/scripts/ensayo.ps1 -Accion Bajar
-  ./backend/scripts/ensayo.ps1 -Accion Suite      # tests de integración contra su propio contenedor
+  ./backend/scripts/ensayo.ps1 -Accion Suite      # tests de integración contra su propio contenedor [-Pruebas Clase1,Clase2]
   ./backend/scripts/ensayo.ps1 -Accion Interfaz   # build, lint, tipos, test:ui y npm audit con Node 24.22.1
 
 La interfaz de una entrega se compila y se prueba en un contenedor con Node 24.22.1, la versión del servidor
@@ -20,11 +20,16 @@ param(
     [Parameter(Mandatory = $true)][ValidateSet('Levantar', 'Bajar', 'Estado', 'Suite', 'Interfaz')][string]$Accion,
     [ValidateSet('contenedor', 'prod', 'dev', 'ninguno')][string]$Frontend = 'contenedor',
     [switch]$Compilar,
+    # Levantar: con un servidor de correo falso (GreenMail, SSL desde el inicio) y el backend configurado para usarlo.
+    # Los correos que llegan quedan como archivos en output/ensayo/correo/ (con el enlace: fuera de Git, Bajar los borra).
+    [switch]$Correo,
     # 1: la interfaz se compila con las variables con las que Next detecta un agente (CA-01).
     [ValidateSet('0', '1')][string]$Agente = '1',
     [string]$JavaHome = 'C:/Program Files/Java/jdk-21',
     # Levantar: JAR web de otra versión para correr sobre la base que migró esta (CA-25: v0.1.1 contra el esquema 4).
     [string]$JarWeb = '',
+    # Suite: solo estas clases (patrón de -Dtest de Maven, p. ej. 'RecoveryTest'). Para iterar; la entrega usa la suite completa.
+    [string]$Pruebas = '',
     [string]$Imagen = 'postgres:18.6'
 )
 # Continue, no Stop: en Windows PowerShell 5.1 cualquier línea que un ejecutable nativo escribe en stderr
@@ -187,26 +192,68 @@ switch ($Accion) {
             Write-Output "JAR web reemplazado por $JarWeb (la migración y el bootstrap son los de esta versión)"
         }
         $java = "$JavaHome/bin/java.exe"
+        $jvmExtra = @()
+        $mailEnv = @{}
+        if ($Correo) {
+            $mailDir = Join-Path $root 'correo'
+            if (Test-Path -LiteralPath $mailDir) { Remove-Item -LiteralPath $mailDir -Recurse -Force }
+            $prevJava = $env:JAVA_HOME; $env:JAVA_HOME = $JavaHome
+            Push-Location $backendRoot
+            try {
+                # Una prueba que solo corre con -Drehearsal.mail=true: levanta GreenMail y espera el archivo 'parar'.
+                $m = Start-Process -FilePath (Join-Path $backendRoot 'mvnw.cmd') -WindowStyle Hidden -PassThru `
+                    -ArgumentList '-B', '-ntp', '-q', '-Dtest=RehearsalMailServer', '-Drehearsal.mail=true', "-Drehearsal.mail.dir=$mailDir", '-Drehearsal.mail.port=3465', 'test' `
+                    -RedirectStandardOutput (Join-Path $root 'logs/correo.out.log') -RedirectStandardError (Join-Path $root 'logs/correo.err.log')
+            } finally { Pop-Location; $env:JAVA_HOME = $prevJava }
+            $pids = [ordered]@{ correo = $m.Id }
+            [System.IO.File]::WriteAllText($pidFile, ($pids | ConvertTo-Json))
+            for ($i = 0; $i -lt 240 -and -not (Test-Path -LiteralPath (Join-Path $mailDir 'listo')); $i++) { Start-Sleep -Milliseconds 500 }
+            if (-not (Test-Path -LiteralPath (Join-Path $mailDir 'listo'))) { throw 'El servidor de correo falso no arrancó (logs/correo.out.log)' }
+            $srv = @{}; foreach ($line in Get-Content -LiteralPath (Join-Path $mailDir 'servidor.txt')) { $k, $v = $line -split '=', 2; $srv[$k] = $v }
+            # La contraseña SMTP va en un archivo del directorio de credenciales del proceso web (D-163), no en una variable.
+            $webCred = Join-Path $root 'credenciales-web'
+            New-Item -ItemType Directory -Force -Path $webCred | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $webCred 'STI_MAIL_PASSWORD'), $srv.password)
+            $mailEnv = @{ STI_MAIL_HOST = 'localhost'; STI_MAIL_PORT = $srv.port; STI_MAIL_USERNAME = $srv.user
+                STI_MAIL_FROM = 'STI-OS <notificaciones@stisistemas.com>'; STI_PUBLIC_URL = "http://127.0.0.1:$puertoFrontend" }
+            # Solo en el ensayo: la JVM confía en el certificado propio del servidor falso. El producto no cambia.
+            $jvmExtra = @("-Djavax.net.ssl.trustStore=$(Join-Path $mailDir 'truststore.p12')", "-Djavax.net.ssl.trustStorePassword=$($srv.truststorePassword)", "-Djavax.net.ssl.trustStoreType=PKCS12")
+            Write-Output "Servidor de correo falso (GreenMail, SSL) en localhost:$($srv.port); correos en $mailDir"
+        }
         $names = 'STI_DB_URL', 'STI_DB_USER', 'STI_DB_PASSWORD', 'STI_MIGRATION_USER', 'STI_MIGRATION_PASSWORD',
-            'STI_INITIAL_ADMIN_NAME', 'STI_INITIAL_ADMIN_EMAIL', 'STI_INITIAL_ADMIN_PASSWORD', 'STI_PORT', 'STI_UPLOADS_DIR', 'STI_API_ORIGIN', 'PORT', 'HOSTNAME'
+            'STI_INITIAL_ADMIN_NAME', 'STI_INITIAL_ADMIN_EMAIL', 'STI_INITIAL_ADMIN_PASSWORD', 'CREDENTIALS_DIRECTORY', 'STI_MAIL_HOST', 'STI_MAIL_PORT', 'STI_MAIL_USERNAME', 'STI_MAIL_FROM', 'STI_PUBLIC_URL', 'STI_PORT', 'STI_UPLOADS_DIR', 'STI_API_ORIGIN', 'PORT', 'HOSTNAME'
         $prev = @{}; foreach ($n in $names) { $prev[$n] = [Environment]::GetEnvironmentVariable($n, 'Process') }
-        $pids = [ordered]@{}
+        if (-not $pids) { $pids = [ordered]@{} }
         try {
             # Flyway sobre una base nueva: cada levantada prueba la instalación limpia desde cero.
-            $env:STI_DB_URL = $s.jdbcUrl; $env:STI_MIGRATION_USER = $s.migrationUser; $env:STI_MIGRATION_PASSWORD = $s.migrationPassword
-            & $java -jar (Join-Path $root 'sti-os-backend-0.1.0-SNAPSHOT-migrator.jar') *> (Join-Path $root 'logs/migrator.log')
-            if ($LASTEXITCODE -ne 0) { throw 'Migración falló (logs/migrator.log)' }
-            $env:STI_INITIAL_ADMIN_NAME = $s.adminName; $env:STI_INITIAL_ADMIN_EMAIL = $s.adminEmail; $env:STI_INITIAL_ADMIN_PASSWORD = $s.adminPassword
-            & $java -jar (Join-Path $root 'sti-os-backend-0.1.0-SNAPSHOT-bootstrap.jar') *> (Join-Path $root 'logs/bootstrap.log')
-            if ($LASTEXITCODE -ne 0) { throw 'Bootstrap del ADMIN falló (logs/bootstrap.log)' }
-            foreach ($n in 'STI_MIGRATION_USER', 'STI_MIGRATION_PASSWORD', 'STI_INITIAL_ADMIN_NAME', 'STI_INITIAL_ADMIN_EMAIL', 'STI_INITIAL_ADMIN_PASSWORD') {
+            # N-35 / D-162: las contraseñas del migrador y del bootstrap van en archivos de un directorio de credenciales
+            # (lo que systemd-run --pipe -p LoadCredential= hace en el servidor), nunca en una variable ni en un argumento.
+            # CREDENTIALS_DIRECTORY apunta a él; el directorio se borra apenas terminan los dos.
+            $credDir = Join-Path $root 'credenciales'
+            New-Item -ItemType Directory -Force -Path $credDir | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $credDir 'STI_MIGRATION_PASSWORD'), $s.migrationPassword)
+            [System.IO.File]::WriteAllText((Join-Path $credDir 'STI_INITIAL_ADMIN_PASSWORD'), $s.adminPassword)
+            $env:CREDENTIALS_DIRECTORY = $credDir
+            try {
+                $env:STI_DB_URL = $s.jdbcUrl; $env:STI_MIGRATION_USER = $s.migrationUser
+                & $java -jar (Join-Path $root 'sti-os-backend-0.1.0-SNAPSHOT-migrator.jar') *> (Join-Path $root 'logs/migrator.log')
+                if ($LASTEXITCODE -ne 0) { throw 'Migración falló (logs/migrator.log)' }
+                $env:STI_INITIAL_ADMIN_NAME = $s.adminName; $env:STI_INITIAL_ADMIN_EMAIL = $s.adminEmail
+                & $java -jar (Join-Path $root 'sti-os-backend-0.1.0-SNAPSHOT-bootstrap.jar') *> (Join-Path $root 'logs/bootstrap.log')
+                if ($LASTEXITCODE -ne 0) { throw 'Bootstrap del ADMIN falló (logs/bootstrap.log)' }
+            } finally {
+                Remove-Item -LiteralPath $credDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            foreach ($n in 'STI_MIGRATION_USER', 'STI_INITIAL_ADMIN_NAME', 'STI_INITIAL_ADMIN_EMAIL', 'CREDENTIALS_DIRECTORY') {
                 [Environment]::SetEnvironmentVariable($n, $null, 'Process')
             }
             # El proceso web recibe solo credenciales de runtime.
             $env:STI_DB_USER = $s.runtimeUser; $env:STI_DB_PASSWORD = $s.runtimePassword
             $env:STI_PORT = "$puertoBackend"; $env:STI_UPLOADS_DIR = (Join-Path $root 'uploads')
+            foreach ($k in $mailEnv.Keys) { [Environment]::SetEnvironmentVariable($k, $mailEnv[$k], 'Process') }
+            if ($Correo) { $env:CREDENTIALS_DIRECTORY = $webCred }
             $p = Start-Process -FilePath $java -WindowStyle Hidden -PassThru `
-                -ArgumentList '-jar', "`"$(Join-Path $root 'sti-os-backend-0.1.0-SNAPSHOT.jar')`"", '--spring.profiles.active=local' `
+                -ArgumentList (@($jvmExtra) + @('-jar', "`"$(Join-Path $root 'sti-os-backend-0.1.0-SNAPSHOT.jar')`"", '--spring.profiles.active=local')) `
                 -RedirectStandardOutput (Join-Path $root 'logs/backend.out.log') -RedirectStandardError (Join-Path $root 'logs/backend.err.log')
             $pids.backend = $p.Id
             [System.IO.File]::WriteAllText($pidFile, ($pids | ConvertTo-Json))
@@ -279,7 +326,17 @@ switch ($Accion) {
         if (Test-Path -LiteralPath $pidFile) {
             $pids = Get-Content -LiteralPath $pidFile -Raw | ConvertFrom-Json
             foreach ($k in 'frontend', 'backend') { if ($pids.$k) { Matar-Arbol ([int]$pids.$k) } }
+            # El servidor de correo falso se detiene solo cuando aparece 'parar'; el árbol se mata después por si no.
+            $mailDirBajar = Join-Path $root 'correo'
+            if ($pids.correo) {
+                if (Test-Path -LiteralPath $mailDirBajar) { [System.IO.File]::WriteAllText((Join-Path $mailDirBajar 'parar'), '1'); Start-Sleep -Seconds 3 }
+                Matar-Arbol ([int]$pids.correo)
+            }
             Remove-Item -LiteralPath $pidFile
+        }
+        foreach ($d in 'correo', 'credenciales-web', 'credenciales') {
+            $dir = Join-Path $root $d
+            if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force; Write-Output "$d borrado" }
         }
         foreach ($c in $contFrontend, $contEnsayo, $contSuite) { if (Existe-Contenedor $c) { & docker rm -f $c | Out-Null; Write-Output "Contenedor $c borrado" } }
         if (Test-Path -LiteralPath $secretsFile) { Remove-Item -LiteralPath $secretsFile; Write-Output 'Secretos borrados' }
@@ -312,17 +369,22 @@ switch ($Accion) {
         # Se corre sola: dos Maven contra la misma base dan errores falsos.
         $pgPass = Nuevo-Secreto; $mig = Nuevo-Secreto; $run = Nuevo-Secreto
         Crear-Contenedor $contSuite $puertoSuite $pgPass
-        $names = 'STI_DB_URL', 'STI_DB_USER', 'STI_DB_PASSWORD', 'STI_MIGRATION_USER', 'STI_MIGRATION_PASSWORD', 'STI_UPGRADE_DB_URL'
+        $names = 'STI_DB_URL', 'STI_DB_USER', 'STI_DB_PASSWORD', 'STI_MIGRATION_USER', 'STI_MIGRATION_PASSWORD', 'STI_UPGRADE_DB_URL', 'STI_UPGRADE4_DB_URL', 'STI_RECOVERY_DB_URL'
         $prev = @{}; foreach ($n in $names) { $prev[$n] = [Environment]::GetEnvironmentVariable($n, 'Process') }
         try {
             Aprovisionar $contSuite $mig $run
             Aprovisionar-Base $contSuite 'sti_os_actualizacion'
+            # Corte 2B: una base para la actualización desde el esquema 4 y otra para la recuperación por correo.
+            Aprovisionar-Base $contSuite 'sti_os_v4'
+            Aprovisionar-Base $contSuite 'sti_os_recuperacion'
             $env:STI_UPGRADE_DB_URL = "jdbc:postgresql://127.0.0.1:$puertoSuite/sti_os_actualizacion"
+            $env:STI_UPGRADE4_DB_URL = "jdbc:postgresql://127.0.0.1:$puertoSuite/sti_os_v4"
+            $env:STI_RECOVERY_DB_URL = "jdbc:postgresql://127.0.0.1:$puertoSuite/sti_os_recuperacion"
             Write-Output "PostgreSQL $((& docker exec $contSuite psql -U postgres -tAc 'show server_version').Trim()) en $contSuite"
             $env:STI_DB_URL = "jdbc:postgresql://127.0.0.1:$puertoSuite/sti_os"
             $env:STI_DB_USER = 'sti_runtime'; $env:STI_DB_PASSWORD = $run
             $env:STI_MIGRATION_USER = 'sti_migrator'; $env:STI_MIGRATION_PASSWORD = $mig
-            Compilar-Backend 'clean verify'
+            Compilar-Backend $(if ($Pruebas) { "clean verify -Dtest=$Pruebas -Dsurefire.failIfNoSpecifiedTests=false" } else { 'clean verify' })
         } finally {
             foreach ($n in $names) { [Environment]::SetEnvironmentVariable($n, $prev[$n], 'Process') }
             & docker rm -f $contSuite | Out-Null

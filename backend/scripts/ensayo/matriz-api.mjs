@@ -533,6 +533,116 @@ section = '9 Cuentas';
     'los intentos de los otros roles no dejaron registro');
 }
 
+// ---------- 10. corte 2B (ENCARGO-DEV-003): recover the password and brake the attempts ----------
+section = '10 Recuperar contraseña y frenos (corte 2B)';
+{
+  const anon = new Session('anónimo');
+  const roles = [['ADMIN', admin], ['SUPERVISOR', S.sup], ['USUARIO', S.t1], ['CLIENTE', S.clA], ['anónimo', anon]];
+  const coded = (x) => `${x.status} ${x.json?.code}`;
+  const sha = (token) => crypto.createHash('sha256').update(token).digest('hex');
+  const newToken = () => crypto.randomBytes(32).toString('base64url');
+  const form = (email, password) => ({ body: new URLSearchParams({ username: email, password }).toString(), headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+  // The mail is out of this matrix's reach (every fake account has a reserved domain), so the link that the mail
+  // would carry is made as the worker does: a token, only its hash in the table, 30 minutes of life.
+  const plantLink = (accountId) => {
+    const token = newToken();
+    sql(`INSERT INTO sti.password_reset_token (id, account_id, token_hash, expires_at) VALUES (gen_random_uuid(), '${accountId}', decode('${sha(token)}', 'hex'), clock_timestamp() + interval '30 minutes')`);
+    return token;
+  };
+  const DEAD = '400 ENLACE_INVALIDO';
+
+  // The three new addresses with the four roles and without a session: open to all, the same answer.
+  for (const [who, s] of roles) {
+    const tag = who === 'anónimo' ? 'anon' : who.toLowerCase();
+    check('POST /api/auth/password-recovery', who, 202, (await s.post('/api/auth/password-recovery', { email: `nadie.${tag}@example.invalid` })).status);
+    check('POST /api/auth/password-recovery/check (enlace inventado)', who, DEAD, coded(await s.post('/api/auth/password-recovery/check', { token: newToken() })));
+    check('POST /api/auth/password-recovery/confirm (enlace inventado)', who, DEAD, coded(await s.post('/api/auth/password-recovery/confirm', { token: newToken(), newPassword: FAKE_PASSWORD + 'x' })));
+    const wrong = await s.get('/api/auth/password-recovery');
+    check('GET /api/auth/password-recovery (método no admitido)', who, '405 JSON propio', `${wrong.status} ${wrong.type?.includes('json') && wrong.json?.status === 405 ? 'JSON propio' : wrong.type}`);
+  }
+
+  // Rule 1: the same status, type and size for an email with account, without account, inactive and empty.
+  const ghost = 'fantasma@example.invalid';
+  const active = (await admin.post('/api/accounts', { name: 'Cuenta activa', email: 'activa@example.invalid', role: 'USUARIO' })).json.account;
+  const off = (await admin.post('/api/accounts', { name: 'Cuenta inactiva', email: 'inactiva@example.invalid', role: 'USUARIO' })).json.account;
+  await admin.raw('PUT', `/api/accounts/${off.id}`, { body: JSON.stringify({ active: false }), headers: { 'content-type': 'application/json' } });
+  const answers = [];
+  for (const email of [active.email, off.email, ghost, '']) {
+    const r = await anon.post('/api/auth/password-recovery', { email });
+    answers.push(`${r.status}|${r.type}|${r.bytes.length}`);
+  }
+  check('Misma respuesta (estado, tipo y tamaño) con cuenta, inactiva, sin cuenta y vacío', 'anónimo', 1, new Set(answers).size, answers[0]);
+  check('Fila de la cuenta activa (dominio reservado)', 'sistema', 'OMITIDO DOMINIO_RESERVADO', sql(`SELECT status || ' ' || reason FROM sti.mail_outbox WHERE account_id = '${active.id}' ORDER BY created_at DESC LIMIT 1`));
+  check('Fila de la cuenta inactiva', 'sistema', 'OMITIDO CUENTA_INACTIVA', sql(`SELECT status || ' ' || reason FROM sti.mail_outbox WHERE account_id = '${off.id}' ORDER BY created_at DESC LIMIT 1`));
+  check('Fila sin cuenta: sin cuenta y sin texto', 'sistema', 'OMITIDO SIN_CUENTA NULL', sql(`SELECT status || ' ' || reason || ' ' || coalesce(account_id::text, 'NULL') FROM sti.mail_outbox WHERE account_id IS NULL ORDER BY created_at DESC LIMIT 1`));
+  check('La cola no tiene columna con el correo escrito, un hash ni un token', 'sistema', 0, Number(sql(`SELECT count(*) FROM information_schema.columns WHERE table_schema = 'sti' AND table_name IN ('mail_outbox', 'mail_attempt') AND (column_name ILIKE '%mail%' OR column_name ILIKE '%address%' OR column_name ILIKE '%hash%' OR column_name ILIKE '%token%')`)));
+  check('Ninguna fila quedó pendiente (dominio reservado)', 'sistema', 0, Number(sql(`SELECT count(*) FROM sti.mail_outbox WHERE status = 'PENDIENTE'`)));
+
+  // Block by email (N-30): 5 failures in a row block 15 minutes, for an account and for an email nobody has.
+  const brake = (await admin.post('/api/accounts', { name: 'Cuenta de freno', email: 'freno@example.invalid', role: 'USUARIO' })).json;
+  await firstSignIn('freno@example.invalid', brake.initialPassword, FAKE_PASSWORD);
+  const run = async (email, password, n) => {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(await new Session('freno').login(email, password));
+    return out.join(' ');
+  };
+  check('Cuenta existente: 4 fallos dan 401 y el 5.º da 429', 'USUARIO', '401 401 401 401 429', await run('freno@example.invalid', 'mala-contrasena-1', 5));
+  check('Correo inexistente: lo mismo, 4 fallos y el 5.º', 'anónimo', '401 401 401 401 429', await run('nadie-freno@example.invalid', 'mala-contrasena-1', 5));
+  const blockedReal = await new Session('b').raw('POST', '/api/auth/login', form('freno@example.invalid', FAKE_PASSWORD));
+  const blockedGhost = await new Session('b').raw('POST', '/api/auth/login', form('nadie-freno@example.invalid', FAKE_PASSWORD));
+  check('Bloqueada: la contraseña correcta también se rechaza (429)', 'USUARIO', '429 DEMASIADOS_INTENTOS', coded(blockedReal));
+  check('Mismo mensaje exista o no la cuenta', 'anónimo', JSON.stringify(blockedReal.json), JSON.stringify(blockedGhost.json), blockedReal.json?.message);
+  let lockEvents = 0;
+  for (let i = 0; i < 20 && lockEvents < 1; i++) {
+    lockEvents = Number(sql(`SELECT count(*) FROM sti.account_event WHERE account_id = (SELECT id FROM sti.app_user WHERE email = 'freno@example.invalid') AND kind = 'BLOQUEO_INGRESO'`));
+    if (!lockEvents) await new Promise((r) => setTimeout(r, 250));
+  }
+  check('El bloqueo queda en la bitácora de la cuenta, una vez', 'sistema', 1, lockEvents);
+  check('La bitácora del bloqueo no guarda contraseñas', 'sistema', 0, Number(sql(`SELECT count(*) FROM sti.account_event WHERE kind = 'BLOQUEO_INGRESO' AND (changes::text ILIKE '%mala-contrasena%' OR changes::text ILIKE '%password%')`)));
+  check('Pedir el enlace durante el bloqueo funciona', 'anónimo', 202, (await anon.post('/api/auth/password-recovery', { email: 'freno@example.invalid' })).status);
+
+  // Choosing the new password with the link: lifts the block, ends sessions, voids the link.
+  const brakeId = sql(`SELECT id FROM sti.app_user WHERE email = 'freno@example.invalid'`);
+  sql(`INSERT INTO sti.spring_session (primary_id, session_id, creation_time, last_access_time, max_inactive_interval, expiry_time, principal_name) VALUES (gen_random_uuid()::text, gen_random_uuid()::text, (extract(epoch FROM now()) * 1000)::bigint, (extract(epoch FROM now()) * 1000)::bigint, 1800, ((extract(epoch FROM now()) + 1800) * 1000)::bigint, 'freno@example.invalid')`);
+  check('Hay una sesión abierta de la cuenta antes de recuperar', 'sistema', 1, Number(sql(`SELECT count(*) FROM sti.spring_session WHERE principal_name = 'freno@example.invalid'`)));
+  const token = plantLink(brakeId);
+  const nueva = 'Nueva-' + crypto.randomBytes(12).toString('base64url');
+  check('Enlace vigente: check', 'anónimo', 204, (await anon.post('/api/auth/password-recovery/check', { token })).status);
+  check('Contraseña de 11 caracteres', 'anónimo', '400 CONTRASENA_CORTA', coded(await anon.post('/api/auth/password-recovery/confirm', { token, newPassword: '12345678901' })));
+  check('El enlace sigue vivo tras un rechazo por contraseña corta', 'anónimo', 204, (await anon.post('/api/auth/password-recovery/check', { token })).status);
+  check('Guardar la contraseña nueva', 'anónimo', 204, (await anon.post('/api/auth/password-recovery/confirm', { token, newPassword: nueva })).status);
+  check('El enlace no sirve de nuevo (un solo uso)', 'anónimo', DEAD, coded(await anon.post('/api/auth/password-recovery/confirm', { token, newPassword: nueva + 'x' })));
+  check('Se cerraron todas las sesiones de la cuenta', 'sistema', 0, Number(sql(`SELECT count(*) FROM sti.spring_session WHERE principal_name = 'freno@example.invalid'`)));
+  check('No inicia sesión sola: quien guardó sigue sin sesión', 'anónimo', 401, (await anon.get('/api/auth/me')).status);
+  check('La contraseña anterior ya no sirve', 'USUARIO', 401, await new Session('o').login('freno@example.invalid', FAKE_PASSWORD));
+  check('La nueva abre aunque la cuenta estaba bloqueada (bloqueo levantado)', 'USUARIO', 204, await new Session('n').login('freno@example.invalid', nueva));
+  check('Bitácora: recuperación por correo', 'sistema', 1, Number(sql(`SELECT count(*) FROM sti.account_event WHERE account_id = '${brakeId}' AND kind = 'RECUPERACION_CORREO'`)));
+  check('Bitácora de recuperación sin contraseña ni token', 'sistema', 0, Number(sql(`SELECT count(*) FROM sti.account_event WHERE kind = 'RECUPERACION_CORREO' AND (strpos(changes::text, '${nueva}') > 0 OR strpos(changes::text, '${token}') > 0 OR changes::text ILIKE '%password%')`)));
+
+  // An account with the initial password still in force: recovering removes the mark.
+  const fresh = (await admin.post('/api/accounts', { name: 'Cuenta inicial', email: 'inicial@example.invalid', role: 'USUARIO' })).json;
+  check('Alta con cambio obligatorio', 'sistema', 't', sql(`SELECT must_change_password FROM sti.app_user WHERE id = '${fresh.account.id}'`));
+  const t2 = plantLink(fresh.account.id);
+  check('Recuperar con el cambio obligatorio pendiente', 'anónimo', 204, (await anon.post('/api/auth/password-recovery/confirm', { token: t2, newPassword: nueva })).status);
+  check('Marca de contraseña inicial retirada', 'sistema', 'f', sql(`SELECT must_change_password FROM sti.app_user WHERE id = '${fresh.account.id}'`));
+  check('La contraseña inicial ya no sirve', 'USUARIO', 401, await new Session('i').login('inicial@example.invalid', fresh.initialPassword));
+
+  // A link of an account switched off does not serve; an absurdly long email gets the same answer.
+  const t3 = plantLink(off.id);
+  check('Enlace de una cuenta inactiva', 'anónimo', DEAD, coded(await anon.post('/api/auth/password-recovery/check', { token: t3 })));
+  check('Correo de 400 caracteres: misma respuesta, sin error', 'anónimo', 202, (await anon.post('/api/auth/password-recovery', { email: 'a'.repeat(400) + '@example.invalid' })).status);
+
+  // The error pages: the application's own JSON, never the tool's page.
+  for (const [who, s] of roles) {
+    const nf = await s.get('/api/no-existe');
+    check('GET /api/no-existe: JSON propio sin HTML', who, who === 'anónimo' ? '401 json' : '404 json', `${nf.status} ${nf.type?.includes('json') && !/<html/i.test(nf.bytes.toString()) ? 'json' : nf.type}`);
+    const bad = await s.raw('DELETE', '/api/auth/csrf');
+    check('DELETE /api/auth/csrf: JSON propio sin HTML', who, 'json', bad.type?.includes('json') && !/<html/i.test(bad.bytes.toString()) ? 'json' : `${bad.status} ${bad.type}`);
+  }
+  const health = await anon.get('/api/health');
+  check('/api/health no dice de qué commit salió', 'anónimo', 0, (health.bytes.toString().match(/commit|git|sha/gi) ?? []).length);
+}
+
 // ---------- output ----------
 const seed = { clients: { cA, cB }, projects: { pA1, pA2, pB1 }, accounts: { admin: { email: creds.adminEmail, note: 'password en secretos.json' }, sup, t1, t2, clA, clB }, tasks: { cicloCompleto: T.id, reapertura: R.id, anulada: C.id } };
 fs.writeFileSync(path.join(OUT, 'datos-falsos.json'), JSON.stringify(seed, null, 2));

@@ -6,7 +6,10 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
-/** Offline one-time bootstrap. Run with migration credentials; never start an HTTP listener. */
+/**
+ * Offline one-time bootstrap. Run with migration credentials; never start an HTTP listener. Both passwords come
+ * from the credentials directory when run under systemd (N-35), or from the environment in the rehearsal.
+ */
 public final class BootstrapAdmin {
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     private BootstrapAdmin() {}
@@ -14,7 +17,7 @@ public final class BootstrapAdmin {
     public static void main(String[] args) throws Exception {
         String name = required("STI_INITIAL_ADMIN_NAME").trim();
         String email = required("STI_INITIAL_ADMIN_EMAIL").trim().toLowerCase(Locale.ROOT);
-        String password = required("STI_INITIAL_ADMIN_PASSWORD");
+        String password = Credentials.secret("STI_INITIAL_ADMIN_PASSWORD");
         if (name.isEmpty() || name.length() > 200 || email.length() > 254 || !EMAIL.matcher(email).matches()
             || password.length() < 12 || password.length() > 1024) {
             throw new IllegalArgumentException("Invalid initial admin input");
@@ -22,7 +25,7 @@ public final class BootstrapAdmin {
         var encoder = new BCryptPasswordEncoder(12);
         String hash = encoder.encode(password);
         try (var connection = DriverManager.getConnection(required("STI_DB_URL"),
-            required("STI_MIGRATION_USER"), required("STI_MIGRATION_PASSWORD"))) {
+            required("STI_MIGRATION_USER"), Credentials.secret("STI_MIGRATION_PASSWORD"))) {
             connection.setAutoCommit(false);
             try (var lock = connection.prepareStatement("SELECT pg_advisory_xact_lock(19283, 1)")) {
                 lock.execute();
