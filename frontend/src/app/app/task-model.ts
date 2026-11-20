@@ -84,6 +84,11 @@ export const CLOSING_REASONS = [
 export const reasonLabel = (reason: string | null | undefined) =>
   CLOSING_REASONS.find((r) => r.value === reason)?.label ?? null;
 
+/** R-21: the service record, for a finished or closed task; operators always, the customer on what it sees, never the technician. */
+export function canDownloadRecord(task: Pick<Task, "status">, role: Role): boolean {
+  return role !== "USUARIO" && (task.status === "FINALIZADO" || isClosed(task.status));
+}
+
 /** The board column a task goes in: both closed states share "Cerradas". */
 export const stageOf = (status: string) =>
   status === "NO_FACTURABLE" ? "FACTURADO" : status;

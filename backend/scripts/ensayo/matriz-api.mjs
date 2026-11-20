@@ -735,6 +735,34 @@ section = '11 Cierre: no facturable y volver a Finalizadas (corte 3A)';
   check('Dos "Volver a Finalizadas" a la vez: uno gana, el otro 409 YA_FINALIZADA', 'ADMIN+SUPERVISOR', `{"200":${ROUNDS},"409 YA_FINALIZADA":${ROUNDS}}`, sorted(codes), `tareas con un número de eventos de vuelta distinto de 1: ${bad}`);
 }
 
+// ---------- 12. service record in PDF (corte 3A, R-21): four roles and no session ----------
+section = '12 Constancia en PDF (corte 3A)';
+{
+  const anon = new Session('anónimo');
+  const pdf = (who, id) => who.get(`/api/tasks/${id}/constancia`);
+  const t = (await admin.post('/api/tasks', { projectId: pA1.id, title: 'Constancia: revisión de cámaras (datos falsos)', location: GPS })).json;
+  check('Constancia de una tarea abierta', 'ADMIN', '409 SIN_CONSTANCIA', await pdf(admin, t.id).then((x) => `${x.status} ${x.json?.code}`));
+  await admin.post(`/api/tasks/${t.id}/assignments`, { userId: t1.id });
+  await S.t1.post(`/api/tasks/${t.id}/status`, { to: 'EN_PROCESO', location: GPS });
+  await S.t1.post(`/api/tasks/${t.id}/confirmations`, { location: GPS });
+  check('Constancia sin sesión', 'anónimo', 401, (await pdf(anon, t.id)).status);
+  check('Constancia del técnico asignado', 'USUARIO', 403, (await pdf(S.t1, t.id)).status);
+  check('Constancia, cliente de otra empresa', 'CLIENTE', 404, (await pdf(S.clB, t.id)).status);
+  for (const [who, label] of [[admin, 'ADMIN'], [S.sup, 'SUPERVISOR'], [S.clA, 'CLIENTE']]) {
+    const x = await pdf(who, t.id);
+    check('Constancia de una tarea finalizada', label, '200 application/pdf no-store %PDF-', `${x.status} ${x.type} ${x.cacheControl} ${x.bytes.subarray(0, 5).toString()}`);
+  }
+  const code = (await admin.get(`/api/tasks/${t.id}`)).json.code;
+  const head = await fetch(`${BASE}/api/tasks/${t.id}/constancia`, { headers: { cookie: admin.cookieHeader() } });
+  check('Nombre del archivo', 'ADMIN', `attachment; filename="constancia-${code}.pdf"`, head.headers.get('content-disposition'));
+  await admin.post(`/api/tasks/${t.id}/status`, { to: 'NO_FACTURABLE', reason: 'GARANTIA', location: GPS });
+  check('Constancia de una no facturable', 'SUPERVISOR', 200, (await pdf(S.sup, t.id)).status);
+  check('El cliente no la ve cerrada', 'CLIENTE', 404, (await pdf(S.clA, t.id)).status);
+  const files = sql(`SELECT count(*) FROM sti.task_photo`) + '/' + sql(`SELECT count(*) FROM sti.task_signature`);
+  await pdf(admin, t.id);
+  check('Descargar no guarda nada', 'sistema', files, sql(`SELECT count(*) FROM sti.task_photo`) + '/' + sql(`SELECT count(*) FROM sti.task_signature`));
+}
+
 // ---------- output ----------
 const seed = { clients: { cA, cB }, projects: { pA1, pA2, pB1 }, accounts: { admin: { email: creds.adminEmail, note: 'password en secretos.json' }, sup, t1, t2, clA, clB }, tasks: { cicloCompleto: T.id, reapertura: R.id, anulada: C.id } };
 fs.writeFileSync(path.join(OUT, 'datos-falsos.json'), JSON.stringify(seed, null, 2));

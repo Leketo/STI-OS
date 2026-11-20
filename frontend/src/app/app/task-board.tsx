@@ -44,6 +44,7 @@ import {
   canDrop,
   canMove,
   canUnassign,
+  canDownloadRecord,
   finishesOnRemoval,
   eventLabel,
   initials,
@@ -442,6 +443,17 @@ export function TaskBoard({
             <Check size={16} />
             Marcar facturada
           </button>
+        )}
+        {canDownloadRecord(task, account.role) && (
+          // R-21: made on demand by the server; nothing is kept.
+          <a
+            className="sti-button secondary"
+            href={`/api/tasks/${task.id}/constancia`}
+            download={`constancia-${task.code}.pdf`}
+          >
+            <FileCheck2 size={16} />
+            Descargar constancia (PDF)
+          </a>
         )}
         {allowed("NO_FACTURABLE") && (
           <button

@@ -337,6 +337,41 @@ public class TaskController {
             || task.assignees().stream().anyMatch(assignee -> assignee.id().equals(account.id()));
     }
 
+    private static final Set<String> WITH_CONSTANCIA = Set.of("FINALIZADO", "FACTURADO", "NO_FACTURABLE");
+
+    /**
+     * Corte 3A (R-21): the service record in PDF. ADMIN and SUPERVISOR always; the CLIENTE on the tasks it sees
+     * (closed ones it does not, rule 6 of R-23); never the technician. Made on demand, never kept, never cached.
+     */
+    @GetMapping("/api/tasks/{id}/constancia")
+    ResponseEntity<byte[]> constancia(@PathVariable UUID id, Principal principal) {
+        var account = accounts.active(principal.getName());
+        if (account.role().equals("USUARIO")) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        var task = tasks.require(id, account);
+        if (!WITH_CONSTANCIA.contains(task.status())) {
+            throw new TaskConflict("SIN_CONSTANCIA", "La constancia se puede descargar cuando la tarea está finalizada.");
+        }
+        String client = jdbc.queryForObject("SELECT c.name FROM sti.client c WHERE c.id = ?", String.class, task.clientId());
+        String project = jdbc.queryForObject("SELECT p.name FROM sti.project p WHERE p.id = ?", String.class, task.projectId());
+        // Atención: the first move to EN_PROCESO. Finalizada: the last time the work finished; a return from a closed
+        // state ("Volver a Finalizadas") is not the work finishing, so it does not count.
+        var attended = jdbc.queryForObject("SELECT min(occurred_at) FROM sti.task_event WHERE task_id = ? AND kind = 'ESTADO' "
+            + "AND to_status = 'EN_PROCESO'", java.time.OffsetDateTime.class, id);
+        var finished = jdbc.queryForObject("SELECT max(occurred_at) FROM sti.task_event WHERE task_id = ? AND kind = 'ESTADO' "
+            + "AND to_status = 'FINALIZADO' AND from_status IS DISTINCT FROM 'FACTURADO' AND from_status IS DISTINCT FROM 'NO_FACTURABLE'",
+            java.time.OffsetDateTime.class, id);
+        var signature = jdbc.query("SELECT storage_name, signer_name, signed_at, remote FROM sti.task_signature "
+                + "WHERE task_id = ? AND superseded_at IS NULL",
+            (rs, n) -> new Constancia.Signature(uploads.read(rs.getString("storage_name")), rs.getString("signer_name"),
+                rs.getObject("signed_at", java.time.OffsetDateTime.class), rs.getBoolean("remote")), id)
+            .stream().findFirst().orElse(null);
+        var data = new Constancia.Data(task.code(), client, project, task.title(),
+            task.assignees().stream().map(Tasks.Assignee::name).toList(), task.createdAt(), attended, finished, signature);
+        byte[] pdf = Constancia.render(data, java.time.Instant.now());
+        return ResponseEntity.ok().header("Content-Type", "application/pdf").header("Cache-Control", "no-store")
+            .header("Content-Disposition", "attachment; filename=\"" + Constancia.fileName(task.code()) + "\"").body(pdf);
+    }
+
     private static ResponseEntity<byte[]> bytes(byte[] content, String contentType) {
         return ResponseEntity.ok().header("Content-Type", contentType).header("Cache-Control", "no-store")
             .header("Content-Disposition", "inline").body(content);

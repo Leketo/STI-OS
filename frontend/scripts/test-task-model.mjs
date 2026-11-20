@@ -16,6 +16,7 @@ import {
   assignable,
   chooseMobileStage,
   stageOf,
+  canDownloadRecord,
   statusLabel,
   STAGES,
 } from "../src/app/app/task-model.ts";
@@ -338,4 +339,13 @@ test("point 14: an image over 1 MiB lowers its resolution, never the limit", () 
   assert.deepEqual(tried, [1600, 1200, 900]);
   assert.ok(dataUrlBytes(image) <= MAX_SIGNATURE_BYTES);
   assert.equal(firstThatFits(() => "data:image/png;base64," + "A".repeat(2_000_000)), null);
+});
+
+test("R-21: the service record is offered on finished and closed tasks, never to the technician", () => {
+  for (const status of ["FINALIZADO", "FACTURADO", "NO_FACTURABLE"]) {
+    for (const role of ["ADMIN", "SUPERVISOR", "CLIENTE"]) assert.equal(canDownloadRecord({ status }, role), true, `${role} ${status}`);
+    assert.equal(canDownloadRecord({ status }, "USUARIO"), false, status);
+  }
+  for (const status of ["POR_HACER", "EN_PROCESO", "ANULADA"])
+    for (const role of ["ADMIN", "SUPERVISOR", "CLIENTE", "USUARIO"]) assert.equal(canDownloadRecord({ status }, role), false);
 });
