@@ -20,9 +20,11 @@ import org.springframework.web.server.ResponseStatusException;
 /** Task reads, visibility rules and the traceability log shared by the task endpoints. */
 @Service
 public class Tasks {
-    public static final Set<String> STATUSES = Set.of("POR_HACER", "EN_PROCESO", "FINALIZADO", "FACTURADO", "ANULADA");
+    public static final Set<String> STATUSES = Set.of("POR_HACER", "EN_PROCESO", "FINALIZADO", "FACTURADO", "ANULADA", "NO_FACTURABLE");
+    /** R-23: why a finished task closed without an invoice. */
+    public static final Set<String> CLOSING_REASONS = Set.of("USO_INTERNO", "GARANTIA");
     private static final String SELECT = """
-        SELECT t.id, t.number, t.project_id, p.client_id, t.title, t.detail, t.status, t.created_at,
+        SELECT t.id, t.number, t.project_id, p.client_id, t.title, t.detail, t.status, t.closing_reason, t.created_at,
                (SELECT count(*) FROM sti.task_photo ph WHERE ph.task_id = t.id) AS photo_count,
                EXISTS (SELECT 1 FROM sti.task_signature s WHERE s.task_id = t.id AND s.superseded_at IS NULL) AS signed
         FROM sti.task t JOIN sti.project p ON p.id = t.project_id WHERE true""";
@@ -33,18 +35,18 @@ public class Tasks {
     public record Location(Double latitude, Double longitude, Double accuracyM, String absentReason) {}
     public record Assignee(UUID id, String name, boolean confirmed) {}
     public record Task(UUID id, String code, UUID projectId, UUID clientId, String title, String detail, String status,
-                       OffsetDateTime createdAt, List<Assignee> assignees, int confirmed, int pending,
-                       int photoCount, boolean signed) {}
+                       String closingReason, OffsetDateTime createdAt, List<Assignee> assignees, int confirmed,
+                       int pending, int photoCount, boolean signed) {}
     public record Event(UUID id, String kind, String fromStatus, String toStatus, UUID actorId, String actorName,
                         UUID subjectId, OffsetDateTime occurredAt, Double latitude, Double longitude, Double accuracyM,
-                        String locationAbsentReason) {}
+                        String locationAbsentReason, String closingReason) {}
     public record Photo(UUID id, String contentType, int byteSize, OffsetDateTime uploadedAt, String uploadedBy) {}
     public record Signature(UUID id, String signerName, LocalDate signedOn, OffsetDateTime signedAt, String presentedBy,
                             boolean remote, boolean current, Double latitude, Double longitude, Double accuracyM,
                             String locationAbsentReason) {}
     public record Detail(UUID id, String code, UUID projectId, UUID clientId, String title, String detail, String status,
-                         OffsetDateTime createdAt, List<Assignee> assignees, int confirmed, int pending,
-                         int photoCount, boolean signed, List<Event> events, List<Photo> photos,
+                         String closingReason, OffsetDateTime createdAt, List<Assignee> assignees, int confirmed,
+                         int pending, int photoCount, boolean signed, List<Event> events, List<Photo> photos,
                          List<Signature> signatures) {}
 
     /**
@@ -105,8 +107,8 @@ public class Tasks {
     public Detail detail(UUID id, Account account) {
         Task task = require(id, account);
         return new Detail(task.id(), task.code(), task.projectId(), task.clientId(), task.title(), task.detail(),
-            task.status(), task.createdAt(), task.assignees(), task.confirmed(), task.pending(), task.photoCount(),
-            task.signed(), events(id), photos(id), signatures(id));
+            task.status(), task.closingReason(), task.createdAt(), task.assignees(), task.confirmed(), task.pending(),
+            task.photoCount(), task.signed(), events(id), photos(id), signatures(id));
     }
 
     public List<Photo> photos(UUID taskId) {
@@ -132,13 +134,20 @@ public class Tasks {
     }
 
     public void event(UUID taskId, String kind, String from, String to, UUID actor, UUID subject, Location location) {
+        event(taskId, kind, from, to, actor, subject, location, null);
+    }
+
+    /** {@code closingReason} only for the step to NO_FACTURABLE (R-23): the log keeps it after the task loses it. */
+    public void event(UUID taskId, String kind, String from, String to, UUID actor, UUID subject, Location location,
+                      String closingReason) {
         jdbc.update("""
             INSERT INTO sti.task_event (id, task_id, kind, from_status, to_status, actor_id, subject_id,
-                                        latitude, longitude, accuracy_m, location_absent_reason)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                                        latitude, longitude, accuracy_m, location_absent_reason, closing_reason)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             UUID.randomUUID(), taskId, kind, from, to, actor, subject,
             location == null ? null : location.latitude(), location == null ? null : location.longitude(),
-            location == null ? null : location.accuracyM(), location == null ? null : location.absentReason());
+            location == null ? null : location.accuracyM(), location == null ? null : location.absentReason(),
+            closingReason);
     }
 
     private void visibility(Account account, StringBuilder sql, List<Object> parameters) {
@@ -146,12 +155,12 @@ public class Tasks {
             case "ADMIN" -> { }
             case "SUPERVISOR" -> sql.append(" AND t.status <> 'ANULADA'");
             case "USUARIO" -> {
-                sql.append(" AND t.status NOT IN ('FACTURADO','ANULADA')")
+                sql.append(" AND t.status NOT IN ('FACTURADO','NO_FACTURABLE','ANULADA')")
                    .append(" AND EXISTS (SELECT 1 FROM sti.task_assignment a WHERE a.task_id = t.id AND a.user_id = ?)");
                 parameters.add(account.id());
             }
             default -> {
-                sql.append(" AND t.status NOT IN ('FACTURADO','ANULADA') AND p.client_id = ?");
+                sql.append(" AND t.status NOT IN ('FACTURADO','NO_FACTURABLE','ANULADA') AND p.client_id = ?");
                 parameters.add(account.clientId());
             }
         }
@@ -173,7 +182,7 @@ public class Tasks {
             List<Assignee> assignees = byTask.getOrDefault(task.id(), List.of());
             int confirmed = (int) assignees.stream().filter(Assignee::confirmed).count();
             return new Task(task.id(), task.code(), task.projectId(), task.clientId(), task.title(), task.detail(),
-                task.status(), task.createdAt(), assignees, confirmed, assignees.size() - confirmed,
+                task.status(), task.closingReason(), task.createdAt(), assignees, confirmed, assignees.size() - confirmed,
                 task.photoCount(), task.signed());
         }).toList();
     }
@@ -181,20 +190,20 @@ public class Tasks {
     private List<Event> events(UUID taskId) {
         return jdbc.query("""
             SELECT e.id, e.kind, e.from_status, e.to_status, e.actor_id, u.display_name, e.subject_id, e.occurred_at,
-                   e.latitude, e.longitude, e.accuracy_m, e.location_absent_reason
+                   e.latitude, e.longitude, e.accuracy_m, e.location_absent_reason, e.closing_reason
             FROM sti.task_event e JOIN sti.app_user u ON u.id = e.actor_id
             WHERE e.task_id = ? ORDER BY e.occurred_at, e.id""",
             (rs, n) -> new Event(rs.getObject("id", UUID.class), rs.getString("kind"), rs.getString("from_status"),
                 rs.getString("to_status"), rs.getObject("actor_id", UUID.class), rs.getString("display_name"),
                 rs.getObject("subject_id", UUID.class), rs.getObject("occurred_at", OffsetDateTime.class),
                 number(rs, "latitude"), number(rs, "longitude"), number(rs, "accuracy_m"),
-                rs.getString("location_absent_reason")), taskId);
+                rs.getString("location_absent_reason"), rs.getString("closing_reason")), taskId);
     }
 
     private static Task row(ResultSet rs, int number) throws SQLException {
         return new Task(rs.getObject("id", UUID.class), code(rs.getInt("number")),
             rs.getObject("project_id", UUID.class), rs.getObject("client_id", UUID.class),
-            rs.getString("title"), rs.getString("detail"), rs.getString("status"),
+            rs.getString("title"), rs.getString("detail"), rs.getString("status"), rs.getString("closing_reason"),
             rs.getObject("created_at", OffsetDateTime.class), List.of(), 0, 0,
             rs.getInt("photo_count"), rs.getBoolean("signed"));
     }

@@ -258,8 +258,8 @@ check('CLIENTE firma en remoto', 'CLIENTE', '201 remote=true', `${r.status} remo
 check('Segunda firma', 'SUPERVISOR', 409, (await S.sup.post(`/api/tasks/${T.id}/signature`, { signerName: 'Otro', image: SIGN_B64, location: GPS })).status);
 const sg = await S.t1.get(`/api/tasks/${T.id}/signature`);
 check('Descargar firma vigente', 'USUARIO', '200 image/png', `${sg.status} ${sg.type}`);
-check('SUPERVISOR factura', 'SUPERVISOR', 403, (await S.sup.post(`/api/tasks/${T.id}/status`, { to: 'FACTURADO', location: GPS })).status);
-check('ADMIN factura', 'ADMIN', 'FACTURADO', (await admin.post(`/api/tasks/${T.id}/status`, { to: 'FACTURADO', location: GPS })).json?.status);
+check('SUPERVISOR factura — D-207 (corte 3A); hasta v0.2.1 daba 403', 'SUPERVISOR', 'FACTURADO', (await S.sup.post(`/api/tasks/${T.id}/status`, { to: 'FACTURADO', location: GPS })).json?.status);
+check('ADMIN factura una tarea ya facturada: 409 YA_CERRADA', 'ADMIN', '409 YA_CERRADA', await admin.post(`/api/tasks/${T.id}/status`, { to: 'FACTURADO', location: GPS }).then((x) => `${x.status} ${x.json?.code}`));
 check('FACTURADO es terminal (reabrir)', 'ADMIN', 400, (await admin.post(`/api/tasks/${T.id}/status`, { to: 'EN_PROCESO', location: GPS })).status);
 check('FACTURADO es terminal (anular)', 'ADMIN', 400, (await admin.post(`/api/tasks/${T.id}/status`, { to: 'ANULADA', location: GPS })).status);
 check('Técnico ya no ve la facturada', 'USUARIO', 404, (await S.t1.get(`/api/tasks/${T.id}`)).status);
@@ -641,6 +641,98 @@ section = '10 Recuperar contraseña y frenos (corte 2B)';
   }
   const health = await anon.get('/api/health');
   check('/api/health no dice de qué commit salió', 'anónimo', 0, (health.bytes.toString().match(/commit|git|sha/gi) ?? []).length);
+}
+
+// ---------- 11. closing (corte 3A, R-23): not billable, invoicing by SUPERVISOR, back to finished ----------
+section = '11 Cierre: no facturable y volver a Finalizadas (corte 3A)';
+{
+  const anon = new Session('anónimo');
+  const st = (x) => x.json?.status ?? `${x.status} ${x.json?.code ?? ''}`.trim();
+  const finished = async (title) => {
+    const t = (await admin.post('/api/tasks', { projectId: pA1.id, title, location: GPS })).json;
+    await admin.post(`/api/tasks/${t.id}/assignments`, { userId: t1.id });
+    await S.t1.post(`/api/tasks/${t.id}/status`, { to: 'EN_PROCESO', location: GPS });
+    await S.t1.post(`/api/tasks/${t.id}/confirmations`, { location: GPS });
+    return t;
+  };
+  const close = (who, id, to, reason) => who.post(`/api/tasks/${id}/status`, { to, location: GPS, ...(reason ? { reason } : {}) });
+  const row = (id) => sql(`SELECT status || ' ' || coalesce(closing_reason, '-') FROM sti.task WHERE id = '${id}'`);
+  const supId = sql(`SELECT id FROM sti.app_user WHERE email = '${sup.email}'`);
+  const N = await finished('Cierre: mantenimiento interno del rack');
+
+  // Permissions: four roles and no session.
+  check('No facturable sin sesión', 'anónimo', 401, (await close(anon, N.id, 'NO_FACTURABLE', 'USO_INTERNO')).status);
+  check('No facturable', 'USUARIO', 403, (await close(S.t1, N.id, 'NO_FACTURABLE', 'USO_INTERNO')).status);
+  check('No facturable', 'CLIENTE', 403, (await close(S.clA, N.id, 'NO_FACTURABLE', 'USO_INTERNO')).status);
+  check('No facturable, cliente de otra empresa', 'CLIENTE', 404, (await close(S.clB, N.id, 'NO_FACTURABLE', 'USO_INTERNO')).status);
+  // Rules.
+  check('Sin motivo', 'SUPERVISOR', '400 MOTIVO_INVALIDO', st(await close(S.sup, N.id, 'NO_FACTURABLE')));
+  check('Motivo fuera de la lista', 'SUPERVISOR', '400 MOTIVO_INVALIDO', st(await close(S.sup, N.id, 'NO_FACTURABLE', 'CORTESIA')));
+  check('Motivo al facturar (no corresponde)', 'SUPERVISOR', '400 MOTIVO_INVALIDO', st(await close(S.sup, N.id, 'FACTURADO', 'GARANTIA')));
+  check('Facturar sin firma', 'SUPERVISOR', 400, (await close(S.sup, N.id, 'FACTURADO')).status);
+  const open = (await admin.post('/api/tasks', { projectId: pA1.id, title: 'Cierre: tarea abierta', location: GPS })).json;
+  check('No facturable desde Por hacer', 'ADMIN', 400, (await close(admin, open.id, 'NO_FACTURABLE', 'USO_INTERNO')).status);
+  check('Volver a Finalizadas desde Finalizada', 'ADMIN', '409 YA_FINALIZADA', st(await close(admin, N.id, 'FINALIZADO')));
+  check('No facturable sin firma (uso interno)', 'SUPERVISOR', 'NO_FACTURABLE', st(await close(S.sup, N.id, 'NO_FACTURABLE', 'USO_INTERNO')));
+  check('En la base: estado y motivo', 'sistema', 'NO_FACTURABLE USO_INTERNO', row(N.id));
+  check('En el historial: quién, cuándo y por qué', 'sistema', `${supId} USO_INTERNO true`, sql(`SELECT actor_id || ' ' || closing_reason || ' ' || (occurred_at IS NOT NULL) FROM sti.task_event WHERE task_id = '${N.id}' AND to_status = 'NO_FACTURABLE'`));
+  check('El detalle trae el motivo', 'ADMIN', 'USO_INTERNO', (await admin.get(`/api/tasks/${N.id}`)).json?.closingReason);
+  check('Ya cerrada: cerrar otra vez', 'ADMIN', '409 YA_CERRADA', st(await close(admin, N.id, 'NO_FACTURABLE', 'GARANTIA')));
+  check('Anular una no facturable', 'ADMIN', 400, (await close(admin, N.id, 'ANULADA')).status);
+  check('Reabrir una no facturable a En proceso', 'ADMIN', 400, (await close(admin, N.id, 'EN_PROCESO')).status);
+  // Visibility (rule 6): as invoiced.
+  check('El técnico asignado no la ve', 'USUARIO', 404, (await S.t1.get(`/api/tasks/${N.id}`)).status);
+  check('El cliente no la ve', 'CLIENTE', 404, (await S.clA.get(`/api/tasks/${N.id}`)).status);
+  check('No está en la lista del técnico', 'USUARIO', 0, ((await S.t1.get('/api/tasks')).json ?? []).filter((t) => t.id === N.id).length);
+  check('No está en la lista del cliente', 'CLIENTE', 0, ((await S.clA.get('/api/tasks')).json ?? []).filter((t) => t.id === N.id).length);
+  check('Filtro No facturable', 'SUPERVISOR', 1, ((await S.sup.get('/api/tasks?status=NO_FACTURABLE')).json ?? []).filter((t) => t.id === N.id).length);
+  check('Filtro No facturable', 'ADMIN', 1, ((await admin.get('/api/tasks?status=NO_FACTURABLE')).json ?? []).filter((t) => t.id === N.id).length);
+  check('Filtro No facturable (técnico: nada)', 'USUARIO', 0, ((await S.t1.get('/api/tasks?status=NO_FACTURABLE')).json ?? []).length);
+  // Back to finished (D-209).
+  check('Volver a Finalizadas', 'USUARIO', 404, (await close(S.t1, N.id, 'FINALIZADO')).status);
+  check('Volver a Finalizadas', 'CLIENTE', 404, (await close(S.clA, N.id, 'FINALIZADO')).status);
+  check('Volver a Finalizadas sin sesión', 'anónimo', 401, (await close(anon, N.id, 'FINALIZADO')).status);
+  check('Volver a Finalizadas con motivo (no corresponde)', 'SUPERVISOR', '400 MOTIVO_INVALIDO', st(await close(S.sup, N.id, 'FINALIZADO', 'GARANTIA')));
+  check('Volver a Finalizadas desde No facturable', 'SUPERVISOR', 'FINALIZADO', st(await close(S.sup, N.id, 'FINALIZADO')));
+  check('Volver borra el motivo de la tarea', 'sistema', 'FINALIZADO -', row(N.id));
+  check('El historial conserva el motivo', 'sistema', 'USO_INTERNO', sql(`SELECT closing_reason FROM sti.task_event WHERE task_id = '${N.id}' AND to_status = 'NO_FACTURABLE'`));
+  check('Volver conserva las confirmaciones', 'sistema', '1 1', sql(`SELECT count(*) || ' ' || count(confirmed_at) FROM sti.task_assignment WHERE task_id = '${N.id}'`));
+  check('Volver queda en el historial', 'sistema', `NO_FACTURABLE ${supId}`, sql(`SELECT from_status || ' ' || actor_id FROM sti.task_event WHERE task_id = '${N.id}' AND to_status = 'FINALIZADO' AND from_status = 'NO_FACTURABLE'`));
+  check('El técnico la vuelve a ver', 'USUARIO', 200, (await S.t1.get(`/api/tasks/${N.id}`)).status);
+  // Garantía, then signed and invoiced by the SUPERVISOR, then back: the signature stays.
+  await close(admin, N.id, 'NO_FACTURABLE', 'GARANTIA');
+  check('No facturable por garantía', 'ADMIN', 'NO_FACTURABLE GARANTIA', row(N.id));
+  await close(admin, N.id, 'FINALIZADO');
+  check('Firma del cliente', 'CLIENTE', 201, (await S.clA.post(`/api/tasks/${N.id}/signature`, { signerName: 'Carla Cliente', image: SIGN_B64, location: GPS })).status);
+  check('El SUPERVISOR factura con firma (D-207)', 'SUPERVISOR', 'FACTURADO', st(await close(S.sup, N.id, 'FACTURADO')));
+  check('Volver a Finalizadas desde Facturada', 'ADMIN', 'FINALIZADO', st(await close(admin, N.id, 'FINALIZADO')));
+  check('Volver conserva la firma vigente', 'sistema', 1, Number(sql(`SELECT count(*) FROM sti.task_signature WHERE task_id = '${N.id}' AND superseded_at IS NULL`)));
+  check('Y se puede volver a facturar sin firmar de nuevo', 'ADMIN', 'FACTURADO', st(await close(admin, N.id, 'FACTURADO')));
+  check('El cliente no ve la facturada', 'CLIENTE', 404, (await S.clA.get(`/api/tasks/${N.id}`)).status);
+
+  // Closing at the same time: one wins, the other is told (rule 8). Independent sessions, released together.
+  const tally = (codes, res) => { for (const x of res) { const k = x.json?.code ? `${x.status} ${x.json.code}` : String(x.status); codes[k] = (codes[k] ?? 0) + 1; } };
+  const sorted = (codes) => JSON.stringify(Object.fromEntries(Object.entries(codes).sort()));
+  let codes = {}, bad = 0;
+  for (let i = 0; i < ROUNDS; i++) {
+    const t = await finished(`Conc cierre ${i}`);
+    await S.clA.post(`/api/tasks/${t.id}/signature`, { signerName: 'Firma', image: SIGN_B64, location: GPS });
+    const [a, b] = [await fresh({ email: creds.adminEmail, password: creds.adminPassword }), await fresh(sup)];
+    await a.refreshCsrf(); await b.refreshCsrf();
+    tally(codes, await Promise.all([close(a, t.id, 'NO_FACTURABLE', 'GARANTIA'), close(b, t.id, 'FACTURADO')]));
+    if (Number(sql(`SELECT count(*) FROM sti.task_event WHERE task_id = '${t.id}' AND to_status IN ('FACTURADO','NO_FACTURABLE')`)) !== 1) bad++;
+  }
+  check('Dos cierres a la vez: uno gana, el otro 409 YA_CERRADA', 'ADMIN+SUPERVISOR', `{"200":${ROUNDS},"409 YA_CERRADA":${ROUNDS}}`, sorted(codes), `tareas con un número de eventos de cierre distinto de 1: ${bad}`);
+  codes = {}; bad = 0;
+  for (let i = 0; i < ROUNDS; i++) {
+    const t = await finished(`Conc volver ${i}`);
+    await close(admin, t.id, 'NO_FACTURABLE', 'USO_INTERNO');
+    const [a, b] = [await fresh({ email: creds.adminEmail, password: creds.adminPassword }), await fresh(sup)];
+    await a.refreshCsrf(); await b.refreshCsrf();
+    tally(codes, await Promise.all([close(a, t.id, 'FINALIZADO'), close(b, t.id, 'FINALIZADO')]));
+    if (Number(sql(`SELECT count(*) FROM sti.task_event WHERE task_id = '${t.id}' AND to_status = 'FINALIZADO' AND from_status = 'NO_FACTURABLE'`)) !== 1) bad++;
+  }
+  check('Dos "Volver a Finalizadas" a la vez: uno gana, el otro 409 YA_FINALIZADA', 'ADMIN+SUPERVISOR', `{"200":${ROUNDS},"409 YA_FINALIZADA":${ROUNDS}}`, sorted(codes), `tareas con un número de eventos de vuelta distinto de 1: ${bad}`);
 }
 
 // ---------- output ----------

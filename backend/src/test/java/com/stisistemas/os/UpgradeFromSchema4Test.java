@@ -18,6 +18,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
  * is every other test class, which start from an empty database.
  */
 class UpgradeFromSchema4Test {
+    // Since corte 3A the same database continues to schema 6 (CA-54): see schema6OverSchema5WithData.
     static final String[] OLD_KINDS = {"ALTA", "EDICION", "ACTIVACION", "DESACTIVACION", "RESTABLECIMIENTO", "CAMBIO_CONTRASENA"};
 
     private static String required(String key) {
@@ -52,7 +53,7 @@ class UpgradeFromSchema4Test {
         List<String> before = snapshot(owner);
         assertThat(before).isNotEmpty();
 
-        flyway(url, null).migrate();
+        flyway(url, "5").migrate();
 
         assertThat(owner.queryForObject("SELECT max(version::int) FROM sti.flyway_schema_history WHERE success", Integer.class)).isEqualTo(5);
         assertThat(snapshot(owner)).as("every row that existed is the same, byte for byte").isEqualTo(before);
@@ -60,7 +61,7 @@ class UpgradeFromSchema4Test {
             assertThat(owner.queryForObject("SELECT count(*) FROM sti." + table, Integer.class)).as(table + " starts empty").isZero();
         }
         // Applying it again changes nothing.
-        assertThat(flyway(url, null).migrate().migrationsExecuted).isZero();
+        assertThat(flyway(url, "5").migrate().migrationsExecuted).isZero();
 
         // The log takes the two new kinds and keeps the six it had; nothing else.
         for (String kind : new String[]{"RECUPERACION_CORREO", "BLOQUEO_INGRESO"}) {
@@ -85,6 +86,59 @@ class UpgradeFromSchema4Test {
             .hasMessageContaining("mail_outbox");
         // The migrations that were already applied are untouched.
         assertThat(owner.queryForList("SELECT version FROM sti.flyway_schema_history WHERE success ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5");
+
+        schema6OverSchema5WithData(owner, runtime, url, admin, project);
+    }
+
+    /**
+     * CA-54 (corte 3A): V6 over the same database, now at schema 5 with tasks in every status there was, their log,
+     * assignments and a signature. Everything stays; the new reason columns start empty; the status list grows by
+     * NO_FACTURABLE and nothing else.
+     */
+    private static void schema6OverSchema5WithData(JdbcTemplate owner, JdbcTemplate runtime, String url, UUID admin, UUID project) {
+        String[] statuses = {"POR_HACER", "EN_PROCESO", "FINALIZADO", "FACTURADO", "ANULADA"};
+        UUID signed = null;
+        for (String status : statuses) {
+            UUID task = UUID.randomUUID();
+            owner.update("INSERT INTO sti.task(id, project_id, title, status, created_by) VALUES (?,?,?,?,?)", task, project, "Tarea " + status, status, admin);
+            owner.update("INSERT INTO sti.task_assignment(task_id, user_id, confirmed_at) VALUES (?,?, CASE WHEN ? THEN now() END)", task, admin, !status.startsWith("P") && !status.startsWith("E"));
+            owner.update("INSERT INTO sti.task_event(id, task_id, kind, from_status, to_status, actor_id, location_absent_reason) VALUES (?,?, 'ESTADO', 'POR_HACER', ?, ?, 'Sin ubicación (prueba)')", UUID.randomUUID(), task, status, admin);
+            if (status.equals("FACTURADO")) signed = task;
+        }
+        owner.update("INSERT INTO sti.task_signature(id, task_id, signer_name, signed_on, storage_name, byte_size, presented_by, remote, location_absent_reason) "
+            + "VALUES (?,?, 'José Peña', current_date, 'firma-prueba-6.png', 70, ?, false, 'Sin ubicación (prueba)')", UUID.randomUUID(), signed, admin);
+        List<String> before = snapshot6(owner);
+
+        flyway(url, null).migrate();
+
+        assertThat(owner.queryForObject("SELECT max(version::int) FROM sti.flyway_schema_history WHERE success", Integer.class)).isEqualTo(6);
+        assertThat(snapshot6(owner)).as("every row that existed at schema 5 is the same").isEqualTo(before);
+        assertThat(owner.queryForObject("SELECT count(*) FROM sti.task WHERE closing_reason IS NOT NULL", Integer.class)).isZero();
+        assertThat(owner.queryForObject("SELECT count(*) FROM sti.task_event WHERE closing_reason IS NOT NULL", Integer.class)).isZero();
+        assertThat(flyway(url, null).migrate().migrationsExecuted).isZero();
+
+        // The runtime role closes a task as not billable, with the reason in the task and in its event.
+        UUID task = owner.queryForObject("SELECT id FROM sti.task WHERE status = 'FINALIZADO' AND project_id = ?", UUID.class, project);
+        runtime.update("UPDATE sti.task SET status = 'NO_FACTURABLE', closing_reason = 'GARANTIA' WHERE id = ?", task);
+        runtime.update("INSERT INTO sti.task_event(id, task_id, kind, from_status, to_status, actor_id, location_absent_reason, closing_reason) "
+            + "VALUES (?,?, 'ESTADO', 'FINALIZADO', 'NO_FACTURABLE', ?, 'Sin ubicación (prueba)', 'GARANTIA')", UUID.randomUUID(), task, admin);
+        // Status and reason go together; the reason is one of two; an event other than the closing carries none.
+        assertThatThrownBy(() -> runtime.update("UPDATE sti.task SET closing_reason = NULL WHERE id = ?", task)).hasMessageContaining("task_closing_reason_status_check");
+        assertThatThrownBy(() -> runtime.update("UPDATE sti.task SET closing_reason = 'CORTESIA' WHERE id = ?", task)).hasMessageContaining("closing_reason");
+        assertThatThrownBy(() -> runtime.update("UPDATE sti.task SET status = 'CERRADA' WHERE status = 'POR_HACER' AND project_id = ?", project)).hasMessageContaining("task_status_check");
+        assertThatThrownBy(() -> runtime.update("INSERT INTO sti.task_event(id, task_id, kind, from_status, to_status, actor_id, location_absent_reason, closing_reason) "
+            + "VALUES (?,?, 'ESTADO', 'NO_FACTURABLE', 'FINALIZADO', ?, 'x', 'GARANTIA')", UUID.randomUUID(), task, admin)).hasMessageContaining("task_event_closing_reason_kind_check");
+        assertThat(owner.queryForList("SELECT version FROM sti.flyway_schema_history WHERE success ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6");
+    }
+
+    /** Rows of every table at schema 5, without the two columns V6 adds (they are checked apart). */
+    private static List<String> snapshot6(JdbcTemplate owner) {
+        var out = new java.util.ArrayList<String>();
+        for (String table : new String[]{"client", "project", "app_user", "account_event", "task", "task_assignment", "task_event",
+                                         "task_signature", "mail_outbox", "mail_attempt", "password_reset_token"}) {
+            out.addAll(owner.queryForList("SELECT '" + table + ":' || (to_jsonb(t) - 'closing_reason')::text FROM sti." + table + " t ORDER BY 1", String.class));
+        }
+        return out;
     }
 
     /** One text per row of every table that existed at schema 4, so that "the same" is not a matter of counting. */

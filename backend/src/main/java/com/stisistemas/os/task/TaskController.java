@@ -29,7 +29,10 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 public class TaskController {
     private static final Set<String> OPERATORS = Set.of("ADMIN", "SUPERVISOR");
-    private static final Set<String> REQUESTABLE = Set.of("POR_HACER", "EN_PROCESO", "FACTURADO", "ANULADA");
+    private static final Set<String> REQUESTABLE =
+        Set.of("POR_HACER", "EN_PROCESO", "FINALIZADO", "FACTURADO", "NO_FACTURABLE", "ANULADA");
+    /** R-23: the two ways a finished task closes. */
+    private static final Set<String> CLOSED = Set.of("FACTURADO", "NO_FACTURABLE");
     private static final Set<String> OPEN = Set.of("POR_HACER", "EN_PROCESO");
     private static final int MAX_PHOTOS = 5;
     private static final ZoneId PARAGUAY = ZoneId.of("America/Asuncion");
@@ -51,7 +54,7 @@ public class TaskController {
     record Operator(UUID id, String name, String role, boolean active) {}
     record NewTask(UUID projectId, String title, String detail, Tasks.Location location) {}
     record NewAssignment(UUID userId) {}
-    record StatusChange(String to, Tasks.Location location) {}
+    record StatusChange(String to, Tasks.Location location, String reason) {}
     record Confirmation(Tasks.Location location) {}
     record NewSignature(String signerName, String signedOn, String image, Tasks.Location location) {}
 
@@ -160,8 +163,10 @@ public class TaskController {
     }
 
     /**
-     * FINALIZADO is never requested here: it is reached when every assignee confirms. FACTURADO needs a client
-     * signature, which belongs to the next slice. Moving a task backwards clears every confirmation.
+     * FINALIZADO is reached when every assignee confirms; it is requested here only to bring a closed task back
+     * ("Volver a Finalizadas", D-209), which keeps confirmations and signature. A finished task closes as FACTURADO
+     * (needs a current signature) or NO_FACTURABLE (needs a reason, no signature), both by ADMIN or SUPERVISOR
+     * (R-23, D-207). Moving an open or finished task backwards clears every confirmation.
      */
     @PostMapping("/api/tasks/{id}/status")
     @Transactional
@@ -170,11 +175,38 @@ public class TaskController {
         if (input == null || input.to() == null || !REQUESTABLE.contains(input.to())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
+        String reason = input.reason() == null || input.reason().isBlank() ? null : input.reason().trim();
+        if (input.to().equals("NO_FACTURABLE") ? reason == null || !Tasks.CLOSING_REASONS.contains(reason) : reason != null) {
+            throw new com.stisistemas.os.Refusal(HttpStatus.BAD_REQUEST, "MOTIVO_INVALIDO", "Elegí el motivo: Uso interno o Garantía.");
+        }
         var location = tasks.checked(input.location());
         tasks.lock(id);
         var task = tasks.require(id, account);
         String from = task.status();
         String to = input.to();
+        boolean closing = CLOSED.contains(to);
+        boolean reopening = to.equals("FINALIZADO");
+        if (closing || reopening) {
+            // Nobody asks for FINALIZADO on an open task: it is reached by confirming. A state rule, 400 for anyone,
+            // as it answered until v0.2.1; only "Volver a Finalizadas" asks for it.
+            if (reopening && !CLOSED.contains(from) && !from.equals("FINALIZADO")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+            if (!OPERATORS.contains(account.role())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+            // Under the task lock: when two people close (or bring back) the same task at once, the second one
+            // finds it already moved and is told so (rule 8 of R-23).
+            if (closing && CLOSED.contains(from)) {
+                throw new TaskConflict("YA_CERRADA", "Otra persona ya cerró esta tarea como "
+                    + (from.equals("FACTURADO") ? "facturada" : "no facturable") + ". Actualizá para ver cómo quedó.");
+            }
+            if (reopening && from.equals("FINALIZADO")) {
+                throw new TaskConflict("YA_FINALIZADA", "Otra persona ya la volvió a Finalizadas. Actualizá para ver cómo quedó.");
+            }
+            if (closing && !from.equals("FINALIZADO")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+            if (to.equals("FACTURADO") && !task.signed()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+            // "Volver a Finalizadas" keeps confirmations and signature and clears the reason; the log keeps it.
+            jdbc.update("UPDATE sti.task SET status = ?, closing_reason = ? WHERE id = ?", to, reason, id);
+            tasks.event(id, "ESTADO", from, to, account.id(), null, location, reason);
+            return tasks.require(id, account);
+        }
         if (!OPEN.contains(from) && !from.equals("FINALIZADO")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         boolean operator = OPERATORS.contains(account.role());
         boolean assigned = task.assignees().stream().anyMatch(assignee -> assignee.id().equals(account.id()));
@@ -190,10 +222,6 @@ public class TaskController {
         // Rule 1 (D-26): nobody could ever confirm a task started without assignees.
         if (to.equals("EN_PROCESO") && task.assignees().isEmpty()) {
             throw new TaskConflict("SIN_ASIGNADOS", "No se puede iniciar una tarea sin personas asignadas. Asigná al menos una antes de iniciarla.");
-        }
-        if (to.equals("FACTURADO")) {
-            if (!account.role().equals("ADMIN")) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-            if (!from.equals("FINALIZADO") || !task.signed()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         if (backwards) {
             jdbc.update("UPDATE sti.task_assignment SET confirmed_at = NULL WHERE task_id = ?", id);

@@ -670,6 +670,40 @@ class RecoveryTest {
         owner.update("DELETE FROM sti.mail_outbox WHERE id = ?", filler);
     }
 
+    /** N-42 (corte 3A): with the ceiling reached, the line that says so is written once a minute in all. */
+    @Test void theCeilingIsLoggedOnceAMinuteHoweverManyMailsWait(CapturedOutput output) throws Exception {
+        UUID filler = UUID.randomUUID();
+        owner.update("INSERT INTO sti.mail_outbox (id, kind, status, finished_at) VALUES (?, 'RECUPERACION', 'ENVIADO', clock_timestamp())", filler);
+        for (int i = 0; i < 30; i++) owner.update("INSERT INTO sti.mail_attempt (id, outbox_id, kind, attempt, result) VALUES (?, ?, 'RECUPERACION', 1, 'ENVIADO')", UUID.randomUUID(), filler);
+        List<UUID> waiting = new java.util.ArrayList<>();
+        for (int i = 0; i < 25; i++) {
+            String email = unique("tope-log-" + i);
+            UUID id = account(email, "Tope Log " + i, true, false);
+            waiting.add(id);
+            owner.update("INSERT INTO sti.mail_outbox (id, account_id, kind, status) VALUES (?, ?, 'RECUPERACION', 'PENDIENTE')", UUID.randomUUID(), id);
+        }
+        int before = output.getOut().split("Tope de envío alcanzado", -1).length;
+        // A worker of its own, so the minute starts with this test; two rounds over the 25 rows held back.
+        var fresh = new RecoveryMailWorker(jdbc, tx, mailer, 1);
+        for (int round = 0; round < 2; round++) {
+            owner.update("UPDATE sti.mail_outbox SET next_attempt_at = clock_timestamp() WHERE status = 'PENDIENTE' AND account_id = ANY (?)", (Object) waiting.toArray(new UUID[0]));
+            while (fresh.processDue() > 0) { }
+        }
+        int lines = output.getOut().split("Tope de envío alcanzado", -1).length - before;
+        System.out.println("N-42: filas retenidas=25, vueltas=2, líneas de tope=" + lines);
+        assertThat(lines).as("one line for 50 held-back turns within the minute").isEqualTo(1);
+        assertThat(sent()).isEmpty();
+        // The clock, apart: the first time yes, within the minute no, after it yes again.
+        var clock = new RecoveryMailWorker(jdbc, tx, mailer, 1);
+        long t = 5_000_000_000L;
+        assertThat(clock.ceilingLogDue(t)).isTrue();
+        assertThat(clock.ceilingLogDue(t + RecoveryMailWorker.CEILING_LOG_EVERY_NANOS - 1)).isFalse();
+        assertThat(clock.ceilingLogDue(t + RecoveryMailWorker.CEILING_LOG_EVERY_NANOS)).isTrue();
+        owner.update("DELETE FROM sti.mail_outbox WHERE status = 'PENDIENTE' AND account_id = ANY (?)", (Object) waiting.toArray(new UUID[0]));
+        owner.update("DELETE FROM sti.mail_attempt WHERE outbox_id = ?", filler);
+        owner.update("DELETE FROM sti.mail_outbox WHERE id = ?", filler);
+    }
+
     @Test void theQueueSurvivesARestart() throws Exception {
         String email = unique("reinicio");
         UUID id = account(email, "Rosario Reinicio", true, false);

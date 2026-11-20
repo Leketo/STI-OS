@@ -4,6 +4,7 @@ import com.stisistemas.os.identity.PasswordRecovery;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,6 +44,11 @@ public class RecoveryMailWorker {
     private final Mailer mailer;
     private final long retryBaseSeconds;
     private volatile long lastPurge;
+    /** N-42: when the ceiling holds the queue, one line a minute in all, however many rows wait (D-173). */
+    public static final long CEILING_LOG_EVERY_NANOS = Duration.ofMinutes(1).toNanos();
+    private final AtomicLong ceilingLoggedAt = new AtomicLong();
+    private final AtomicLong ceilingQuiet = new AtomicLong();
+    private volatile boolean ceilingLoggedOnce;
 
     public RecoveryMailWorker(JdbcTemplate jdbc, TransactionTemplate tx, Mailer mailer,
                               @Value("${sti.mail.retry-base-seconds:60}") long retryBaseSeconds) {
@@ -68,6 +74,16 @@ public class RecoveryMailWorker {
         int done = 0;
         while (done < 20 && Boolean.TRUE.equals(tx.execute(status -> processOne()))) done++;
         return done;
+    }
+
+    /** True when the ceiling line may be written now: the first time, and then once a minute at most. */
+    public boolean ceilingLogDue(long nowNanos) {
+        synchronized (ceilingLoggedAt) {
+            if (ceilingLoggedOnce && nowNanos - ceilingLoggedAt.get() < CEILING_LOG_EVERY_NANOS) return false;
+            ceilingLoggedOnce = true;
+            ceilingLoggedAt.set(nowNanos);
+            return true;
+        }
     }
 
     private record Row(UUID id, UUID accountId, int attempts, boolean expired) {}
@@ -104,7 +120,11 @@ public class RecoveryMailWorker {
         if (sentSince("1 hour") >= MAX_PER_HOUR || sentSince("1 day") >= MAX_PER_DAY) {
             // The ceiling is the server's own: the row waits and the 60 minutes keep running.
             jdbc.update("UPDATE sti.mail_outbox SET next_attempt_at = clock_timestamp() + interval '1 minute' WHERE id = ?", row.id());
-            log.warn("Tope de envío alcanzado: el correo espera");
+            if (ceilingLogDue(System.nanoTime())) {
+                log.warn("Tope de envío alcanzado: el correo espera ({} avisos iguales callados en el último minuto)", ceilingQuiet.getAndSet(0));
+            } else {
+                ceilingQuiet.incrementAndGet();
+            }
             return true;
         }
 

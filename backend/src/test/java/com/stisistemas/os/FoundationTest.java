@@ -342,8 +342,8 @@ class FoundationTest {
         assertThat(supervisor.getBytes("/api/tasks/" + task + "/signature").body()).isEqualTo(Base64.getDecoder().decode(PNG_BASE64));
         assertThat(supervisor.get("/api/tasks/" + task).body()).contains("\"signed\":true", "\"kind\":\"FIRMA\"");
 
-        assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"FACTURADO\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(403);
-        var invoiced = admin.postJson("/api/tasks/" + task + "/status", "{\"to\":\"FACTURADO\",\"location\":" + HERE + "}", admin.csrf());
+        // D-207 (corte 3A): the SUPERVISOR invoices too; until v0.2.1 this answered 403.
+        var invoiced = supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"FACTURADO\",\"location\":" + HERE + "}", supervisor.csrf());
         assertThat(invoiced.body()).contains("\"status\":\"FACTURADO\"");
         assertThat(admin.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", admin.csrf()).statusCode()).isEqualTo(400);
         var worker = new Browser(); worker.login("usuario");
