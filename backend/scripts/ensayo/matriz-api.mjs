@@ -647,7 +647,8 @@ section = '10 Recuperar contraseña y frenos (corte 2B)';
 section = '11 Cierre: no facturable y volver a Finalizadas (corte 3A)';
 {
   const anon = new Session('anónimo');
-  const st = (x) => x.json?.status ?? `${x.status} ${x.json?.code ?? ''}`.trim();
+  // A task answers with its state; an error answers with its own status and code (both JSON carry "status").
+  const st = (x) => (x.status === 200 ? x.json?.status : `${x.status} ${x.json?.code ?? ''}`.trim());
   const finished = async (title) => {
     const t = (await admin.post('/api/tasks', { projectId: pA1.id, title, location: GPS })).json;
     await admin.post(`/api/tasks/${t.id}/assignments`, { userId: t1.id });
@@ -711,7 +712,7 @@ section = '11 Cierre: no facturable y volver a Finalizadas (corte 3A)';
   check('El cliente no ve la facturada', 'CLIENTE', 404, (await S.clA.get(`/api/tasks/${N.id}`)).status);
 
   // Closing at the same time: one wins, the other is told (rule 8). Independent sessions, released together.
-  const tally = (codes, res) => { for (const x of res) { const k = x.json?.code ? `${x.status} ${x.json.code}` : String(x.status); codes[k] = (codes[k] ?? 0) + 1; } };
+  const tally = (codes, res) => { for (const x of res) { const k = x.status === 200 ? '200' : `${x.status} ${x.json?.code}`; codes[k] = (codes[k] ?? 0) + 1; } };
   const sorted = (codes) => JSON.stringify(Object.fromEntries(Object.entries(codes).sort()));
   let codes = {}, bad = 0;
   for (let i = 0; i < ROUNDS; i++) {
