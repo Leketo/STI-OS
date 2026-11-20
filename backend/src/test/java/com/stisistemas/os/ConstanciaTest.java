@@ -118,6 +118,18 @@ class ConstanciaTest {
         assertThat(close(browser("admin"), task, "NO_FACTURABLE", "USO_INTERNO")).isEqualTo(200);
         assertThat(close(browser("admin"), task, "FINALIZADO", null)).isEqualTo(200);
         assertThat(text(supervisor.get(path(task)).body())).containsPattern("Finalizada\s+" + java.util.regex.Pattern.quote(paraguay(ended)));
+        // Reopened for real (CA-52): back to EN_PROCESO and finished again by the technician's confirmation. The finish
+        // moves to the new one, the start stays the first, and the signature, superseded by the reopening, is blank.
+        assertThat(close(browser("admin"), task, "EN_PROCESO", null)).isEqualTo(200);
+        assertThat(technician.postJson("/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", technician.csrf()).body())
+            .contains("\"status\":\"FINALIZADO\"");
+        var again = owner.queryForObject("SELECT max(occurred_at) FROM sti.task_event WHERE task_id = ? AND from_status = 'EN_PROCESO' "
+            + "AND to_status = 'FINALIZADO'", OffsetDateTime.class, id);
+        assertThat(again).isAfter(ended.plusHours(1));
+        String reopened = text(supervisor.get(path(task)).body());
+        assertThat(reopened).containsPattern("Atención\s+" + java.util.regex.Pattern.quote(paraguay(started)));
+        assertThat(reopened).containsPattern("Finalizada\s+" + java.util.regex.Pattern.quote(paraguay(again)));
+        assertThat(reopened).containsPattern("Firma\s+—").doesNotContain("Aclaración: José Peña");
         // Made on demand and never kept: downloading leaves no file and no row.
         int files = files(), rows = rows();
         assertThat(supervisor.get(path(task)).statusCode()).isEqualTo(200);
