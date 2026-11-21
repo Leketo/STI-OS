@@ -89,7 +89,7 @@ class AccountsTest {
     // ---------------------------------------------------------------------------------------------- CA-24
 
     @Test void upgradeFromSchema3KeepsAccountsAndPasswordsWithoutForcingAChange() throws Exception {
-        assertThat(owner.queryForObject("SELECT max(version::int) FROM sti.flyway_schema_history WHERE success", Integer.class)).isEqualTo(6); // V6, corte 3A
+        assertThat(owner.queryForObject("SELECT max(version::int) FROM sti.flyway_schema_history WHERE success", Integer.class)).isEqualTo(7); // V7, corte 3B (was 6 in 3A)
         assertThat(owner.queryForList("SELECT email FROM sti.app_user", String.class)).contains(emails(EXISTING));
         for (String name : EXISTING) {
             String email = name + "@example.invalid";

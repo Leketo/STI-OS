@@ -94,7 +94,8 @@ class ScheduleAndNamesTest {
         assertThat(owner.queryForObject("SELECT count(*) FROM sti.task_assignment WHERE task_id = ?", Integer.class, task)).isEqualTo(2);
         assertThat(owner.queryForList("SELECT u.email || ' ' || e.scheduled_to FROM sti.task_event e JOIN sti.app_user u ON u.id = e.subject_id "
             + "WHERE e.task_id = ? AND e.kind = 'ASIGNADA' ORDER BY 1", String.class, task))
-            .containsExactly(email("tecnico") + " " + day, email("tecnico2") + " " + day);
+            // DEV-09: any order; ORDER BY 1 follows the database collation, which skips the dot in the e-mail.
+            .containsExactlyInAnyOrder(email("tecnico") + " " + day, email("tecnico2") + " " + day);
 
         // With people and no day, nothing is created.
         var admin = browser("admin");
