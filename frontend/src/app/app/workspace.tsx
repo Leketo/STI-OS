@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  ArrowUpRight,
   Building2,
   ChevronRight,
   FolderKanban,
@@ -240,14 +239,6 @@ export function Workspace({ account }: { account: Account }) {
             <ChevronRight size={14} />
             <strong>{labels[view]}</strong>
           </div>
-          <a
-            className="sti-demo-link"
-            href="/demo"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Ver demo pública <ArrowUpRight size={14} />
-          </a>
         </header>
         <main id="workspace-content" className="sti-content" tabIndex={-1}>
           {data.notice && (

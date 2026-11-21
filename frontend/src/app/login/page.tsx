@@ -107,7 +107,6 @@ export default function LoginPage() {
           </Link>
         </form>
         <div className="sti-auth-footer">
-          <Link href="/demo">Explorar la demostración pública</Link>
           <ThemeControl />
         </div>
       </div>

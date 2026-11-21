@@ -322,17 +322,6 @@ html.dark .sti-auth {
   color: var(--sti-text);
   font-weight: 550;
 }
-.sti-demo-link {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  color: var(--sti-muted) !important;
-  font-size: var(--sti-font-xs);
-  text-decoration: none;
-}
-.sti-demo-link:hover {
-  text-decoration: underline;
-}
 .sti-content {
   flex: 1;
   min-width: 0;
@@ -1775,9 +1764,6 @@ html.dark .sti-auth {
   }
   .sti-breadcrumb {
     gap: 6px;
-  }
-  .sti-demo-link {
-    font-size: var(--sti-font-xs);
   }
   .sti-content {
     padding: 24px 16px 15px;

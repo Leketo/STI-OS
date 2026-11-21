@@ -3,7 +3,6 @@ import { Inter } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import "./app/workspace.css";
-import { AppShell } from "@/components/sites/kanban/AppShell";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -49,7 +48,7 @@ export default function RootLayout({
         >{`(function(){try{var p=localStorage.getItem('sti-theme');var d=p==='dark'||(p!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);document.documentElement.style.colorScheme=d?'dark':'light'}catch(e){}})();`}</Script>
       </head>
       <body className="min-h-full flex flex-col font-sans bg-background text-foreground">
-        <AppShell>{children}</AppShell>
+        {children}
       </body>
     </html>
   );
