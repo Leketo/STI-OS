@@ -23,6 +23,13 @@
 // - Concurrency runs 10 rounds, as the encargo asks of the suite (18/11: 8).
 // - Technician 2 signs in again before the board seed: section 7 expires its sessions on purpose, and on 18/11
 //   that left part of the board to a separate fix-up script.
+// - Corte 3B (ENCARGO-DEV-005, D-262), forced by two new rules, listed in docs/informe-corte-3b:
+//   * rule 5 (R-10): a task without a day is not assigned without one, so every assignment sends today's day in
+//     Paraguay (HOY). Same people, same tasks, same expected answers;
+//   * rule 16 (D-258): "Cliente con nombre repetido" was an observation (201, duplicates allowed) and is now a rule
+//     with an expected answer, 409 NOMBRE_REPETIDO;
+//   * section 13 is new: the day and the names, with the four roles and without a session.
+//   The 3A matrix, unchanged, is the one CA-74 runs against v0.3.0 for the rollback (git show v0.3.0-candidato.1:...).
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -68,6 +75,7 @@ class Session {
     const j = await res.json();
     this.token = j.token; this.header = j.headerName ?? this.header;
   }
+  put(url, data) { return this.raw('PUT', url, { body: JSON.stringify(data), headers: { 'content-type': 'application/json' } }); }
   async login(email, password) {
     const r = await this.raw('POST', '/api/auth/login', {
       body: new URLSearchParams({ username: email, password }).toString(),
@@ -121,6 +129,9 @@ fs.writeFileSync(path.join(OUT, 'assets', 'foto-prueba.png'), PHOTO);
 fs.writeFileSync(path.join(OUT, 'assets', 'foto-falsa.png'), FAKE_PNG);
 
 const GPS = { latitude: -25.2637, longitude: -57.5759, accuracyM: 12 }; // Asunción
+// Corte 3B: today in Paraguay, the day every assignment of the earlier sections is made for (rule 5).
+const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Asuncion' }).format(new Date());
+const dayFrom = (days) => { const d = new Date(HOY + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
 const NOGPS = { absentReason: 'Permiso de ubicación denegado (prueba)' };
 
 // ---------- 0. health + auth ----------
@@ -180,8 +191,9 @@ check('Cuenta USUARIO con empresa', 'ADMIN', 400, (await admin.post('/api/accoun
 check('Correo duplicado (distinto caso)', 'ADMIN', 409, (await admin.post('/api/accounts', { name: 'X', email: 'TECNICO1@example.invalid', role: 'USUARIO' })).status);
 check('Proyecto con empresa inexistente', 'ADMIN', 400, (await admin.post('/api/projects', { clientId: '00000000-0000-0000-0000-000000000000', name: 'X' })).status);
 check('Cliente con nombre vacío', 'ADMIN', 400, (await admin.post('/api/clients', { name: '   ' })).status);
-const dupClient = await admin.post('/api/clients', { name: 'Constructora Ficticia SA' });
-observe('Cliente con nombre repetido', 'ADMIN', dupClient.status, dupClient.status === 201 ? 'se permite duplicar empresas con el mismo nombre' : '');
+const dupClient = await admin.post('/api/clients', { name: ' constructora ficticia sa ' });
+check('Cliente con nombre repetido (distinto caso y espacios)', 'ADMIN', '409 NOMBRE_REPETIDO', `${dupClient.status} ${dupClient.json?.code}`,
+  'corte 3B, D-258: hasta el 3A era una observación (201, se permitía duplicar)');
 
 // sessions per role
 const S = {};
@@ -208,11 +220,11 @@ section = '2 Ciclo completo';
 let r = await S.sup.post('/api/tasks', { projectId: pA1.id, title: 'Instalar 4 cámaras domo en piso 3', detail: 'Cableado UTP cat6 desde el rack del piso 2.', location: GPS });
 check('SUPERVISOR crea tarea', 'SUPERVISOR', 201, r.status);
 const T = r.json; check('Estado inicial', 'SUPERVISOR', 'POR_HACER', T.status); observe('Código asignado', 'SUPERVISOR', T.code);
-check('Asignar técnico 1', 'SUPERVISOR', 200, (await S.sup.post(`/api/tasks/${T.id}/assignments`, { userId: t1.id })).status);
-check('Asignar técnico 2', 'SUPERVISOR', 200, (await S.sup.post(`/api/tasks/${T.id}/assignments`, { userId: t2.id })).status);
-check('Asignar dos veces al mismo (idempotente)', 'SUPERVISOR', 200, (await S.sup.post(`/api/tasks/${T.id}/assignments`, { userId: t2.id })).status);
-check('Asignar a un CLIENTE', 'SUPERVISOR', 400, (await S.sup.post(`/api/tasks/${T.id}/assignments`, { userId: clA.id })).status);
-check('USUARIO asigna', 'USUARIO', 403, (await S.t1.post(`/api/tasks/${T.id}/assignments`, { userId: t1.id })).status);
+check('Asignar técnico 1', 'SUPERVISOR', 200, (await S.sup.post(`/api/tasks/${T.id}/assignments`, { userId: t1.id, scheduledOn: HOY })).status);
+check('Asignar técnico 2', 'SUPERVISOR', 200, (await S.sup.post(`/api/tasks/${T.id}/assignments`, { userId: t2.id, scheduledOn: HOY })).status);
+check('Asignar dos veces al mismo (idempotente)', 'SUPERVISOR', 200, (await S.sup.post(`/api/tasks/${T.id}/assignments`, { userId: t2.id, scheduledOn: HOY })).status);
+check('Asignar a un CLIENTE', 'SUPERVISOR', 400, (await S.sup.post(`/api/tasks/${T.id}/assignments`, { userId: clA.id, scheduledOn: HOY })).status);
+check('USUARIO asigna', 'USUARIO', 403, (await S.t1.post(`/api/tasks/${T.id}/assignments`, { userId: t1.id, scheduledOn: HOY })).status);
 check('Técnico asignado ve la tarea', 'USUARIO', 200, (await S.t1.get(`/api/tasks/${T.id}`)).status);
 check('CLIENTE de la empresa ve la tarea', 'CLIENTE', 200, (await S.clA.get(`/api/tasks/${T.id}`)).status);
 check('CLIENTE de otra empresa', 'CLIENTE', 404, (await S.clB.get(`/api/tasks/${T.id}`)).status);
@@ -277,7 +289,7 @@ fs.writeFileSync(path.join(OUT, 'tarea-ciclo-completo.json'), JSON.stringify(ful
 section = '3 Reapertura y firma reemplazada';
 r = await S.sup.post('/api/tasks', { projectId: pB1.id, title: 'Ajustar parlantes del lobby', location: GPS });
 const R = r.json;
-await S.sup.post(`/api/tasks/${R.id}/assignments`, { userId: t1.id });
+await S.sup.post(`/api/tasks/${R.id}/assignments`, { userId: t1.id, scheduledOn: HOY });
 await S.t1.post(`/api/tasks/${R.id}/status`, { to: 'EN_PROCESO', location: GPS });
 check('Única confirmación → FINALIZADO', 'USUARIO', 'FINALIZADO', (await S.t1.post(`/api/tasks/${R.id}/confirmations`, { location: GPS })).json?.status);
 check('Firma presencial del técnico asignado', 'USUARIO', '201 remote=false', await S.t1.post(`/api/tasks/${R.id}/signature`, { signerName: 'Gerente del hotel', image: SIGN_B64, location: GPS }).then((x) => `${x.status} remote=${x.json?.remote}`));
@@ -325,14 +337,14 @@ r = await admin.post(`/api/tasks/${E1.id}/status`, { to: 'EN_PROCESO', location:
 check('ADMIN inicia una tarea sin asignados', 'ADMIN', '409 SIN_ASIGNADOS', `${r.status} ${r.json?.code}`, 'D-26 regla 1; el 18/11 era una observación (200 EN_PROCESO)');
 check('La tarea sigue en POR_HACER', 'ADMIN', 'POR_HACER', sql(`SELECT status FROM sti.task WHERE id='${E1.id}'`));
 // Under rule 1 the task needs an assignee to start; the rule checked here is unchanged: ADMIN not assigned cannot confirm.
-await admin.post(`/api/tasks/${E1.id}/assignments`, { userId: t1.id });
+await admin.post(`/api/tasks/${E1.id}/assignments`, { userId: t1.id, scheduledOn: HOY });
 await admin.post(`/api/tasks/${E1.id}/status`, { to: 'EN_PROCESO', location: GPS });
 check('ADMIN confirma sin estar asignado', 'ADMIN', 403, (await admin.post(`/api/tasks/${E1.id}/confirmations`, { location: GPS })).status);
 
 r = await admin.post('/api/tasks', { projectId: pA1.id, title: 'Borde: desasignar al último pendiente', location: GPS });
 const E2 = r.json;
-await admin.post(`/api/tasks/${E2.id}/assignments`, { userId: t1.id });
-await admin.post(`/api/tasks/${E2.id}/assignments`, { userId: t2.id });
+await admin.post(`/api/tasks/${E2.id}/assignments`, { userId: t1.id, scheduledOn: HOY });
+await admin.post(`/api/tasks/${E2.id}/assignments`, { userId: t2.id, scheduledOn: HOY });
 await S.t1.post(`/api/tasks/${E2.id}/status`, { to: 'EN_PROCESO', location: GPS });
 await S.t1.post(`/api/tasks/${E2.id}/confirmations`, { location: GPS });
 r = await S.sup.del(`/api/tasks/${E2.id}/assignments/${t2.id}`);
@@ -343,7 +355,7 @@ check('El que queda ya no tiene nada que confirmar', 'USUARIO', 400, (await S.t1
 
 r = await admin.post('/api/tasks', { projectId: pA1.id, title: 'Borde: desasignar a todos en curso', location: GPS });
 const E3 = r.json;
-await admin.post(`/api/tasks/${E3.id}/assignments`, { userId: t1.id });
+await admin.post(`/api/tasks/${E3.id}/assignments`, { userId: t1.id, scheduledOn: HOY });
 await S.t1.post(`/api/tasks/${E3.id}/status`, { to: 'EN_PROCESO', location: GPS });
 r = await admin.del(`/api/tasks/${E3.id}/assignments/${t1.id}`);
 check('Desasignar al único técnico de una tarea EN_PROCESO', 'ADMIN', '409 ULTIMO_ASIGNADO', `${r.status} ${r.json?.code}`, 'D-26 regla 3; el 18/11 era una observación');
@@ -378,8 +390,8 @@ const fresh = async (acc) => { const x = new Session(acc.email); await x.login(a
   let stuck = 0, finished = 0, doubleFin = 0;
   for (let i = 0; i < ROUNDS; i++) {
     const t = (await admin.post('/api/tasks', { projectId: pA1.id, title: `Conc confirmaciones ${i}`, location: GPS })).json;
-    await admin.post(`/api/tasks/${t.id}/assignments`, { userId: t1.id });
-    await admin.post(`/api/tasks/${t.id}/assignments`, { userId: t2.id });
+    await admin.post(`/api/tasks/${t.id}/assignments`, { userId: t1.id, scheduledOn: HOY });
+    await admin.post(`/api/tasks/${t.id}/assignments`, { userId: t2.id, scheduledOn: HOY });
     await admin.post(`/api/tasks/${t.id}/status`, { to: 'EN_PROCESO', location: GPS });
     const [a, b] = [await fresh(t1), await fresh(t2)];
     await a.refreshCsrf(); await b.refreshCsrf();
@@ -408,7 +420,7 @@ const fresh = async (acc) => { const x = new Session(acc.email); await x.login(a
   let codes = {}, multi = 0;
   for (let i = 0; i < ROUNDS; i++) {
     const t = (await admin.post('/api/tasks', { projectId: pA1.id, title: `Conc firmas ${i}`, location: GPS })).json;
-    await admin.post(`/api/tasks/${t.id}/assignments`, { userId: t1.id });
+    await admin.post(`/api/tasks/${t.id}/assignments`, { userId: t1.id, scheduledOn: HOY });
     await S.t1.post(`/api/tasks/${t.id}/status`, { to: 'EN_PROCESO', location: GPS });
     await S.t1.post(`/api/tasks/${t.id}/confirmations`, { location: GPS });
     const [a, b] = [await fresh(clA), await fresh(sup)];
@@ -426,20 +438,20 @@ const board = [];
 const task = async (who, projectId, title, detail) => (await who.post('/api/tasks', { projectId, title, detail, location: GPS })).json;
 const go = (who, id, to, loc = GPS) => who.post(`/api/tasks/${id}/status`, { to, location: loc });
 const b1 = await task(S.sup, pA1.id, 'Relevar cobertura de cámaras en estacionamiento', 'Visita con el jefe de obra.'); board.push(b1);
-await S.sup.post(`/api/tasks/${b1.id}/assignments`, { userId: t1.id });
+await S.sup.post(`/api/tasks/${b1.id}/assignments`, { userId: t1.id, scheduledOn: HOY });
 const b2 = await task(S.clA, pA2.id, 'Pedido: punto de red extra en oficina técnica', 'Lo solicita la administración de obra.'); board.push(b2);
 const b3 = await task(S.sup, pB1.id, 'Cambiar amplificador del salón principal', null); board.push(b3);
-await S.sup.post(`/api/tasks/${b3.id}/assignments`, { userId: t1.id }); await S.sup.post(`/api/tasks/${b3.id}/assignments`, { userId: t2.id });
+await S.sup.post(`/api/tasks/${b3.id}/assignments`, { userId: t1.id, scheduledOn: HOY }); await S.sup.post(`/api/tasks/${b3.id}/assignments`, { userId: t2.id, scheduledOn: HOY });
 await go(S.t1, b3.id, 'EN_PROCESO'); await S.t2.post(`/api/tasks/${b3.id}/confirmations`, { location: GPS });
 const b4 = await task(S.t1, pA1.id, 'Peinado de rack piso 2', 'Etiquetar patch cords.'); board.push(b4);
 await go(S.t1, b4.id, 'EN_PROCESO'); await S.t1.upload(`/api/tasks/${b4.id}/photos`, PHOTO, 'rack.png', 'image/png');
 const b5 = await task(S.sup, pA2.id, 'Tendido de fibra entre obrador y portería', null); board.push(b5);
-await S.sup.post(`/api/tasks/${b5.id}/assignments`, { userId: t2.id }); await go(S.t2, b5.id, 'EN_PROCESO'); await S.t2.post(`/api/tasks/${b5.id}/confirmations`, { location: GPS });
+await S.sup.post(`/api/tasks/${b5.id}/assignments`, { userId: t2.id, scheduledOn: HOY }); await go(S.t2, b5.id, 'EN_PROCESO'); await S.t2.post(`/api/tasks/${b5.id}/confirmations`, { location: GPS });
 const b6 = await task(S.sup, pB1.id, 'Prueba de sonido en habitaciones 101-110', null); board.push(b6);
-await S.sup.post(`/api/tasks/${b6.id}/assignments`, { userId: t1.id }); await go(S.t1, b6.id, 'EN_PROCESO'); await S.t1.post(`/api/tasks/${b6.id}/confirmations`, { location: GPS });
+await S.sup.post(`/api/tasks/${b6.id}/assignments`, { userId: t1.id, scheduledOn: HOY }); await go(S.t1, b6.id, 'EN_PROCESO'); await S.t1.post(`/api/tasks/${b6.id}/confirmations`, { location: GPS });
 await S.clB.post(`/api/tasks/${b6.id}/signature`, { signerName: 'Hugo Cliente', image: SIGN_B64, location: GPS });
 const b7 = await task(S.sup, pA1.id, 'Configurar NVR y grabación 30 días', null); board.push(b7);
-await S.sup.post(`/api/tasks/${b7.id}/assignments`, { userId: t1.id }); await go(S.t1, b7.id, 'EN_PROCESO'); await S.t1.post(`/api/tasks/${b7.id}/confirmations`, { location: GPS });
+await S.sup.post(`/api/tasks/${b7.id}/assignments`, { userId: t1.id, scheduledOn: HOY }); await go(S.t1, b7.id, 'EN_PROCESO'); await S.t1.post(`/api/tasks/${b7.id}/confirmations`, { location: GPS });
 await S.clA.post(`/api/tasks/${b7.id}/signature`, { signerName: 'Carla Cliente', image: SIGN_B64, location: GPS }); await go(admin, b7.id, 'FACTURADO');
 const b8 = await task(S.sup, pA2.id, 'Montaje de soporte de TV en sala de reuniones', null); board.push(b8);
 const fin = {};
@@ -651,7 +663,7 @@ section = '11 Cierre: no facturable y volver a Finalizadas (corte 3A)';
   const st = (x) => (x.status === 200 ? x.json?.status : `${x.status} ${x.json?.code ?? ''}`.trim());
   const finished = async (title) => {
     const t = (await admin.post('/api/tasks', { projectId: pA1.id, title, location: GPS })).json;
-    await admin.post(`/api/tasks/${t.id}/assignments`, { userId: t1.id });
+    await admin.post(`/api/tasks/${t.id}/assignments`, { userId: t1.id, scheduledOn: HOY });
     await S.t1.post(`/api/tasks/${t.id}/status`, { to: 'EN_PROCESO', location: GPS });
     await S.t1.post(`/api/tasks/${t.id}/confirmations`, { location: GPS });
     return t;
@@ -743,7 +755,7 @@ section = '12 Constancia en PDF (corte 3A)';
   const pdf = (who, id) => who.get(`/api/tasks/${id}/constancia`);
   const t = (await admin.post('/api/tasks', { projectId: pA1.id, title: 'Constancia: revisión de cámaras (datos falsos)', location: GPS })).json;
   check('Constancia de una tarea abierta', 'ADMIN', '409 SIN_CONSTANCIA', await pdf(admin, t.id).then((x) => `${x.status} ${x.json?.code}`));
-  await admin.post(`/api/tasks/${t.id}/assignments`, { userId: t1.id });
+  await admin.post(`/api/tasks/${t.id}/assignments`, { userId: t1.id, scheduledOn: HOY });
   await S.t1.post(`/api/tasks/${t.id}/status`, { to: 'EN_PROCESO', location: GPS });
   await S.t1.post(`/api/tasks/${t.id}/confirmations`, { location: GPS });
   check('Constancia sin sesión', 'anónimo', 401, (await pdf(anon, t.id)).status);
@@ -762,6 +774,69 @@ section = '12 Constancia en PDF (corte 3A)';
   const files = sql(`SELECT count(*) FROM sti.task_photo`) + '/' + sql(`SELECT count(*) FROM sti.task_signature`);
   await pdf(admin, t.id);
   check('Descargar no guarda nada', 'sistema', files, sql(`SELECT count(*) FROM sti.task_photo`) + '/' + sql(`SELECT count(*) FROM sti.task_signature`));
+}
+
+section = '13 Fecha de asignación y nombres (corte 3B)';
+{
+  const anon = new Session('anónimo');
+  const st = (x) => `${x.status}${x.json?.code ? ' ' + x.json.code : ''}`;
+  const day = (id) => sql(`SELECT coalesce(scheduled_on::text, '-') FROM sti.task WHERE id = '${id}'`);
+  const task = (title, extra = {}) => ({ projectId: pA1.id, title, location: GPS, ...extra });
+  // At creation (points 2 and 3, D-252).
+  check('CLIENTE da de alta con responsables', 'CLIENTE', '403 ASIGNACION_NO_PERMITIDA', st(await S.clA.post('/api/tasks', task('3B cliente', { assignees: [t1.id] }))));
+  check('CLIENTE da de alta con fecha', 'CLIENTE', '403 ASIGNACION_NO_PERMITIDA', st(await S.clA.post('/api/tasks', task('3B cliente', { scheduledOn: HOY }))));
+  check('USUARIO da de alta con fecha', 'USUARIO', '403 ASIGNACION_NO_PERMITIDA', st(await S.t1.post('/api/tasks', task('3B técnico', { scheduledOn: HOY }))));
+  check('No quedó ninguna de esas', 'sistema', '0', sql(`SELECT count(*) FROM sti.task WHERE title IN ('3B cliente', '3B técnico')`));
+  check('Alta con responsables y sin fecha', 'SUPERVISOR', '400 FECHA_OBLIGATORIA', st(await S.sup.post('/api/tasks', task('3B sin día', { assignees: [t1.id] }))));
+  const withDay = await S.sup.post('/api/tasks', task('3B con equipo (datos falsos)', { assignees: [t1.id, t2.id], scheduledOn: dayFrom(2) }));
+  check('Alta con responsables y fecha', 'SUPERVISOR', 201, withDay.status);
+  check('Fecha y responsables guardados', 'sistema', `${dayFrom(2)} 2`, `${day(withDay.json?.id)} ${sql(`SELECT count(*) FROM sti.task_assignment WHERE task_id = '${withDay.json?.id}'`)}`);
+  const own = await S.t1.post('/api/tasks', task('3B propia del técnico (datos falsos)'));
+  check('La tarea del técnico queda para hoy en Paraguay', 'USUARIO', HOY, day(own.json?.id));
+  check('Fecha fuera de rango', 'ADMIN', '400 FECHA_FUERA_DE_RANGO', st(await admin.post('/api/tasks', task('3B lejos', { scheduledOn: dayFrom(5 * 366 + 2) }))));
+  // Assigning (point 5).
+  const open = (await admin.post('/api/tasks', task('3B sin fecha (datos falsos)'))).json;
+  check('Asignar sin fecha una tarea sin fecha', 'SUPERVISOR', '400 FECHA_OBLIGATORIA', st(await S.sup.post(`/api/tasks/${open.id}/assignments`, { userId: t1.id })));
+  check('Asignar con fecha', 'SUPERVISOR', 200, (await S.sup.post(`/api/tasks/${open.id}/assignments`, { userId: t1.id, scheduledOn: dayFrom(1) })).status);
+  check('Asignar otra persona, sin fecha, a una con fecha', 'ADMIN', 200, (await admin.post(`/api/tasks/${open.id}/assignments`, { userId: t2.id })).status);
+  check('Asignar con otro día a una con fecha', 'ADMIN', '409 FECHA_DISTINTA', st(await admin.post(`/api/tasks/${open.id}/assignments`, { userId: sup.id, scheduledOn: dayFrom(3) })));
+  // Changing the day (point 6, D-259, D-263), four roles and no session.
+  const change = (who, to) => who.post(`/api/tasks/${open.id}/schedule`, { scheduledOn: to });
+  check('Cambiar fecha', 'SUPERVISOR', 200, (await change(S.sup, dayFrom(4))).status);
+  check('Cambiar fecha', 'ADMIN', 200, (await change(admin, dayFrom(5))).status);
+  check('Cambiar fecha (técnico asignado)', 'USUARIO', 403, (await change(S.t1, dayFrom(6))).status);
+  check('Cambiar fecha', 'CLIENTE', 403, (await change(S.clA, dayFrom(6))).status);
+  check('Cambiar fecha, otra empresa', 'CLIENTE', 404, (await change(S.clB, dayFrom(6))).status);
+  check('Cambiar fecha', 'anónimo', 401, (await change(anon, dayFrom(6))).status);
+  check('Fecha guardada', 'sistema', dayFrom(5), day(open.id));
+  check('Historial del cambio', 'sistema', `${dayFrom(4)}>${dayFrom(5)} ${creds.adminEmail} No aplica: cambio de fecha`,
+    sql(`SELECT e.scheduled_from || '>' || e.scheduled_to || ' ' || u.email || ' ' || e.location_absent_reason FROM sti.task_event e JOIN sti.app_user u ON u.id = e.actor_id WHERE e.task_id = '${open.id}' AND e.kind = 'FECHA' ORDER BY e.occurred_at DESC LIMIT 1`));
+  check('Reprogramada', 'ADMIN', 2, (await admin.get(`/api/tasks/${open.id}`)).json?.rescheduled);
+  await go(S.t1, open.id, 'EN_PROCESO');
+  check('Cambiar fecha en proceso', 'SUPERVISOR', 200, (await change(S.sup, dayFrom(7))).status);
+  await S.t1.post(`/api/tasks/${open.id}/confirmations`, { location: GPS });
+  await S.t2.post(`/api/tasks/${open.id}/confirmations`, { location: GPS });
+  check('Cambiar fecha de una finalizada', 'ADMIN', '409 FECHA_NO_EDITABLE', st(await change(admin, dayFrom(8))));
+  check('Terminada en la tarea finalizada', 'SUPERVISOR', 'sí', (await S.sup.get(`/api/tasks/${open.id}`)).json?.finishedAt ? 'sí' : 'no');
+  // Names (points 14 to 17, D-258, D-265).
+  const nc = await admin.post('/api/clients', { name: 'Empresa de ensayo 3B' });
+  const np = await admin.post('/api/projects', { clientId: nc.json.id, name: 'Obra de ensayo 3B' });
+  for (const [who, label] of [[S.sup, 'SUPERVISOR'], [S.t1, 'USUARIO'], [S.clA, 'CLIENTE'], [anon, 'anónimo']]) {
+    const expected = label === 'anónimo' ? 401 : 403;
+    check('Renombrar cliente', label, expected, (await who.put(`/api/clients/${nc.json.id}`, { name: 'Otro nombre 3B' })).status);
+    check('Renombrar proyecto', label, expected, (await who.put(`/api/projects/${np.json.id}`, { name: 'Otro nombre 3B' })).status);
+    check('Conteos del panel de edición', label, expected, (await who.get(`/api/clients/${nc.json.id}/summary`)).status);
+  }
+  check('Renombrar cliente', 'ADMIN', 200, (await admin.put(`/api/clients/${nc.json.id}`, { name: 'Empresa renombrada 3B' })).status);
+  check('Nombre guardado y registrado', 'sistema', `Empresa renombrada 3B Empresa de ensayo 3B>Empresa renombrada 3B ${creds.adminEmail}`,
+    sql(`SELECT c.name || ' ' || e.old_name || '>' || e.new_name || ' ' || u.email FROM sti.client c JOIN sti.catalog_name_edit e ON e.client_id = c.id JOIN sti.app_user u ON u.id = e.actor_id WHERE c.id = '${nc.json.id}'`));
+  check('Renombrar con el nombre de otra empresa', 'ADMIN', '409 NOMBRE_REPETIDO', st(await admin.put(`/api/clients/${nc.json.id}`, { name: 'CONSTRUCTORA FICTICIA SA' })));
+  check('Guardar el mismo nombre', 'ADMIN', 200, (await admin.put(`/api/clients/${nc.json.id}`, { name: 'Empresa renombrada 3B' })).status);
+  check('Proyecto repetido en el mismo cliente', 'ADMIN', '409 NOMBRE_REPETIDO', st(await admin.post('/api/projects', { clientId: nc.json.id, name: 'obra de ensayo 3b' })));
+  check('Mismo nombre de proyecto en otro cliente', 'ADMIN', 201, (await admin.post('/api/projects', { clientId: cB.id, name: 'Obra de ensayo 3B' })).status);
+  check('Renombrar proyecto', 'ADMIN', 200, (await admin.put(`/api/projects/${np.json.id}`, { name: 'Obra renombrada 3B' })).status);
+  check('El proyecto sigue en su cliente', 'sistema', nc.json.id, sql(`SELECT client_id FROM sti.project WHERE id = '${np.json.id}'`));
+  check('Conteos del panel de edición', 'ADMIN', '1 0 0', await admin.get(`/api/clients/${nc.json.id}/summary`).then((x) => `${x.json?.projects} ${x.json?.tasks} ${x.json?.clientUsers}`));
 }
 
 // ---------- output ----------
