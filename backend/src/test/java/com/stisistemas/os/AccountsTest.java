@@ -326,7 +326,7 @@ class AccountsTest {
         assertThat(supervisor.get("/api/tasks/" + task).body()).contains(person.id().toString());
         assertThat(supervisor.get("/api/operators").body()).doesNotContain(person.id().toString());
         String other = newTask(supervisor, "No se le asigna");
-        assertThat(supervisor.json("POST", "/api/tasks/" + other + "/assignments", "{\"userId\":\"" + person.id() + "\"}", supervisor.csrf()).statusCode()).isEqualTo(400);
+        assertThat(supervisor.json("POST", "/api/tasks/" + other + "/assignments", "{\"userId\":\"" + person.id() + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(400);
         assertThat((List<Boolean>) JsonPath.read(admin.get("/api/operators?includeInactive=true").body(),
             "$[?(@.id == '" + person.id() + "')].active")).containsExactly(false);
 
@@ -486,7 +486,7 @@ class AccountsTest {
         assertThat(customer.get("/api/tasks/" + task + "/signature").statusCode()).isEqualTo(404);
         assertThat(customer.json("POST", "/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", csrf).statusCode()).isEqualTo(404);
         assertThat(customer.json("POST", "/api/tasks/" + task + "/status", "{\"to\":\"POR_HACER\",\"location\":" + HERE + "}", csrf).statusCode()).isEqualTo(404);
-        assertThat(customer.json("POST", "/api/tasks/" + task + "/assignments", "{\"userId\":\"" + person.id() + "\"}", csrf).statusCode()).isEqualTo(404);
+        assertThat(customer.json("POST", "/api/tasks/" + task + "/assignments", "{\"userId\":\"" + person.id() + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", csrf).statusCode()).isEqualTo(404);
         assertThat(customer.json("DELETE", "/api/tasks/" + task + "/assignments/" + person.id(), "", csrf).statusCode()).isEqualTo(404);
         assertThat(customer.json("POST", "/api/tasks/" + task + "/signature", "{\"signerName\":\"X\",\"signedOn\":\"2026-11-19\",\"image\":\"x\",\"location\":" + HERE + "}", csrf).statusCode()).isEqualTo(404);
         assertThat(status(task)).isEqualTo("EN_PROCESO");
@@ -581,7 +581,7 @@ class AccountsTest {
     }
 
     private void assign(Browser supervisor, String task, UUID person) throws Exception {
-        assertThat(supervisor.json("POST", "/api/tasks/" + task + "/assignments", "{\"userId\":\"" + person + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        assertThat(supervisor.json("POST", "/api/tasks/" + task + "/assignments", "{\"userId\":\"" + person + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
     }
 
     /**

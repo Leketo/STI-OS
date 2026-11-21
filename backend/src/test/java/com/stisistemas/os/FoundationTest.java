@@ -235,8 +235,8 @@ class FoundationTest {
         String task = JsonPath.read(created.body(), "$.id");
         assertThat(created.body()).contains("\"status\":\"POR_HACER\"").contains("\"code\":\"TAR-");
 
-        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + operatorId + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
-        var both = supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("supervisor") + "\"}", supervisor.csrf());
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + operatorId + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        var both = supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("supervisor") + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", supervisor.csrf());
         assertThat(both.statusCode()).isEqualTo(200);
         assertThat(both.body()).contains("\"confirmed\":0", "\"pending\":2");
 
@@ -262,9 +262,9 @@ class FoundationTest {
 
         var worker = new Browser(); worker.login("usuario");
         assertThat(worker.get("/api/tasks/" + task).statusCode()).isEqualTo(404);
-        assertThat(worker.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("usuario") + "\"}", worker.csrf()).statusCode()).isEqualTo(404);
-        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("usuario") + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
-        assertThat(worker.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("supervisor") + "\"}", worker.csrf()).statusCode()).isEqualTo(403);
+        assertThat(worker.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("usuario") + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", worker.csrf()).statusCode()).isEqualTo(404);
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("usuario") + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        assertThat(worker.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("supervisor") + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", worker.csrf()).statusCode()).isEqualTo(403);
         assertThat(worker.postJson("/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", worker.csrf()).statusCode()).isEqualTo(400);
         assertThat(worker.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", worker.csrf()).statusCode()).isEqualTo(200);
         assertThat(worker.postJson("/api/tasks/" + task + "/status", "{\"to\":\"POR_HACER\",\"location\":" + HERE + "}", worker.csrf()).statusCode()).isEqualTo(403);
@@ -296,7 +296,7 @@ class FoundationTest {
         var detail = supervisor.get("/api/tasks/" + task);
         assertThat(detail.body()).contains("El dispositivo no obtuvo coordenadas", "\"kind\":\"CREADA\"");
         // D-26, rule 1: a task starts only with someone assigned.
-        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("supervisor") + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("supervisor") + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
         assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(200);
         assertThat(supervisor.get("/api/tasks/" + task).body()).contains("-25.3", "-57.6");
     }
@@ -393,7 +393,7 @@ class FoundationTest {
         for (int round = 1; round <= ROUNDS; round++) {
             String task = JsonPath.read(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Confirmación simultánea " + round, HERE), supervisor.csrf()).body(), "$.id");
             for (String person : new String[]{"usuario", "tecnico2"}) {
-                assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId(person) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+                assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId(person) + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
             }
             assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(200);
             var first = new Browser(); first.login("usuario");
@@ -483,7 +483,7 @@ class FoundationTest {
         var supervisor = new Browser(); supervisor.login("supervisor");
         String task = JsonPath.read(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Uno confirma, otro se va", HERE), supervisor.csrf()).body(), "$.id");
         for (String person : new String[]{"usuario", "tecnico2"}) {
-            assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId(person) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+            assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId(person) + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
         }
         assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(200);
         var worker = new Browser(); worker.login("usuario");
@@ -503,7 +503,7 @@ class FoundationTest {
         // Removing someone who already confirmed while another is still pending changes nothing else.
         String other = JsonPath.read(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Se va el que confirmó", HERE), supervisor.csrf()).body(), "$.id");
         for (String person : new String[]{"usuario", "tecnico2"}) {
-            supervisor.postJson("/api/tasks/" + other + "/assignments", "{\"userId\":\"" + userId(person) + "\"}", supervisor.csrf());
+            supervisor.postJson("/api/tasks/" + other + "/assignments", "{\"userId\":\"" + userId(person) + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", supervisor.csrf());
         }
         supervisor.postJson("/api/tasks/" + other + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf());
         worker.postJson("/api/tasks/" + other + "/confirmations", "{\"location\":" + HERE + "}", worker.csrf());
@@ -515,7 +515,7 @@ class FoundationTest {
     @Test void lastAssigneeOfATaskInProgressCannotBeRemoved() throws Exception {
         var supervisor = new Browser(); supervisor.login("supervisor");
         String task = JsonPath.read(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Último técnico", HERE), supervisor.csrf()).body(), "$.id");
-        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("usuario") + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("usuario") + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
         assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(200);
 
         var refused = supervisor.send("DELETE", "/api/tasks/" + task + "/assignments/" + userId("usuario"), supervisor.csrf());
@@ -570,7 +570,7 @@ class FoundationTest {
     /** A task carried to FINALIZADO by its single assignee, ready to be signed. */
     private String finished(Browser supervisor) throws Exception {
         String task = JsonPath.read(supervisor.postJson("/api/tasks", newTask(PROJECT_A, "Trabajo terminado", HERE), supervisor.csrf()).body(), "$.id");
-        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("supervisor") + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("supervisor") + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
         assertThat(supervisor.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", supervisor.csrf()).statusCode()).isEqualTo(200);
         assertThat(supervisor.postJson("/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", supervisor.csrf()).body())
             .contains("\"status\":\"FINALIZADO\"");

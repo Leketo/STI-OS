@@ -161,7 +161,7 @@ class ConstanciaTest {
     private String finished(Browser supervisor, Browser technician) throws Exception {
         String task = JsonPath.read(supervisor.postJson("/api/tasks", newTask("Constancia " + UUID.randomUUID()), supervisor.csrf()).body(), "$.id");
         String technicianId = owner.queryForObject("SELECT id::text FROM sti.app_user WHERE email = ?", String.class, email("tecnico"));
-        supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + technicianId + "\"}", supervisor.csrf());
+        supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + technicianId + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", supervisor.csrf());
         technician.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", technician.csrf());
         assertThat(technician.postJson("/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", technician.csrf()).body())
             .contains("\"status\":\"FINALIZADO\"");

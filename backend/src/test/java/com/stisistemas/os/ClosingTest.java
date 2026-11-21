@@ -201,7 +201,7 @@ class ClosingTest {
         var supervisor = browser("supervisor");
         var technician = browser("tecnico");
         String task = JsonPath.read(supervisor.postJson("/api/tasks", newTask("Trabajo " + UUID.randomUUID()), supervisor.csrf()).body(), "$.id");
-        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("tecnico") + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
+        assertThat(supervisor.postJson("/api/tasks/" + task + "/assignments", "{\"userId\":\"" + userId("tecnico") + "\",\"scheduledOn\":\"" + java.time.LocalDate.now(java.time.ZoneId.of("America/Asuncion")) + "\"}", supervisor.csrf()).statusCode()).isEqualTo(200);
         assertThat(technician.postJson("/api/tasks/" + task + "/status", "{\"to\":\"EN_PROCESO\",\"location\":" + HERE + "}", technician.csrf()).statusCode()).isEqualTo(200);
         assertThat(technician.postJson("/api/tasks/" + task + "/confirmations", "{\"location\":" + HERE + "}", technician.csrf()).body())
             .contains("\"status\":\"FINALIZADO\"");

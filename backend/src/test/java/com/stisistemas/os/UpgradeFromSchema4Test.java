@@ -109,13 +109,14 @@ class UpgradeFromSchema4Test {
             + "VALUES (?,?, 'José Peña', current_date, 'firma-prueba-6.png', 70, ?, false, 'Sin ubicación (prueba)')", UUID.randomUUID(), signed, admin);
         List<String> before = snapshot6(owner);
 
-        flyway(url, null).migrate();
+        // Corte 3B: this step stops at 6; V7 follows in schema7OverSchema6WithData.
+        flyway(url, "6").migrate();
 
         assertThat(owner.queryForObject("SELECT max(version::int) FROM sti.flyway_schema_history WHERE success", Integer.class)).isEqualTo(6);
         assertThat(snapshot6(owner)).as("every row that existed at schema 5 is the same").isEqualTo(before);
         assertThat(owner.queryForObject("SELECT count(*) FROM sti.task WHERE closing_reason IS NOT NULL", Integer.class)).isZero();
         assertThat(owner.queryForObject("SELECT count(*) FROM sti.task_event WHERE closing_reason IS NOT NULL", Integer.class)).isZero();
-        assertThat(flyway(url, null).migrate().migrationsExecuted).isZero();
+        assertThat(flyway(url, "6").migrate().migrationsExecuted).isZero();
 
         // The runtime role closes a task as not billable, with the reason in the task and in its event.
         UUID task = owner.queryForObject("SELECT id FROM sti.task WHERE status = 'FINALIZADO' AND project_id = ?", UUID.class, project);
@@ -129,6 +130,71 @@ class UpgradeFromSchema4Test {
         assertThatThrownBy(() -> runtime.update("INSERT INTO sti.task_event(id, task_id, kind, from_status, to_status, actor_id, location_absent_reason, closing_reason) "
             + "VALUES (?,?, 'ESTADO', 'NO_FACTURABLE', 'FINALIZADO', ?, 'x', 'GARANTIA')", UUID.randomUUID(), task, admin)).hasMessageContaining("task_event_closing_reason_kind_check");
         assertThat(owner.queryForList("SELECT version FROM sti.flyway_schema_history WHERE success ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6");
+
+        schema7OverSchema6WithData(owner, runtime, url, admin, project);
+    }
+
+    /**
+     * CA-74 (corte 3B): V7 over the same database, now at schema 6 with tasks in every status, a not billable one,
+     * their log, assignments and a signature, as production stands. Everything stays; no task gets a day on its own
+     * (point 8); the rename log starts empty; the event kinds grow by FECHA and nothing else.
+     */
+    private static void schema7OverSchema6WithData(JdbcTemplate owner, JdbcTemplate runtime, String url, UUID admin, UUID project) {
+        List<String> before = snapshot7(owner);
+        assertThat(before).anyMatch(row -> row.contains("NO_FACTURABLE"));
+
+        flyway(url, null).migrate();
+
+        assertThat(owner.queryForObject("SELECT max(version::int) FROM sti.flyway_schema_history WHERE success", Integer.class)).isEqualTo(7);
+        assertThat(snapshot7(owner)).as("every row that existed at schema 6 is the same").isEqualTo(before);
+        assertThat(owner.queryForObject("SELECT count(*) FROM sti.task WHERE scheduled_on IS NOT NULL", Integer.class)).isZero();
+        assertThat(owner.queryForObject("SELECT count(*) FROM sti.task_event WHERE scheduled_from IS NOT NULL OR scheduled_to IS NOT NULL", Integer.class)).isZero();
+        assertThat(owner.queryForObject("SELECT count(*) FROM sti.catalog_name_edit", Integer.class)).isZero();
+        assertThat(flyway(url, null).migrate().migrationsExecuted).isZero();
+
+        // The runtime role schedules a task and logs the change, without location but with D-263's reason.
+        UUID task = owner.queryForObject("SELECT id FROM sti.task WHERE status = 'POR_HACER' AND project_id = ?", UUID.class, project);
+        runtime.update("UPDATE sti.task SET scheduled_on = DATE '2026-11-24' WHERE id = ?", task);
+        runtime.update("INSERT INTO sti.task_event(id, task_id, kind, actor_id, location_absent_reason, scheduled_from, scheduled_to) "
+            + "VALUES (?,?, 'FECHA', ?, 'No aplica: cambio de fecha', NULL, DATE '2026-11-24')", UUID.randomUUID(), task, admin);
+        runtime.update("INSERT INTO sti.task_event(id, task_id, kind, actor_id, subject_id, scheduled_to) VALUES (?,?, 'ASIGNADA', ?, ?, DATE '2026-11-24')",
+            UUID.randomUUID(), task, admin, admin);
+        // The kinds that were there still go in; an unknown one does not.
+        for (String kind : new String[]{"CREADA", "ESTADO", "CONFIRMACION", "FIRMA", "FOTO"}) {
+            runtime.update("INSERT INTO sti.task_event(id, task_id, kind, actor_id, location_absent_reason) VALUES (?,?,?,?, 'Sin ubicación (prueba)')",
+                UUID.randomUUID(), task, kind, admin);
+        }
+        runtime.update("INSERT INTO sti.task_event(id, task_id, kind, actor_id, subject_id) VALUES (?,?, 'DESASIGNADA', ?, ?)", UUID.randomUUID(), task, admin, admin);
+        assertThatThrownBy(() -> runtime.update("INSERT INTO sti.task_event(id, task_id, kind, actor_id, location_absent_reason) VALUES (?,?, 'OTRO', ?, 'x')",
+            UUID.randomUUID(), task, admin)).hasMessageContaining("task_event_kind_check");
+        // A FECHA keeps the new day; days go only in ASIGNADA and FECHA; the location rule of V2 still holds for FECHA.
+        assertThatThrownBy(() -> runtime.update("INSERT INTO sti.task_event(id, task_id, kind, actor_id, location_absent_reason) VALUES (?,?, 'FECHA', ?, 'x')",
+            UUID.randomUUID(), task, admin)).hasMessageContaining("task_event_fecha_check");
+        assertThatThrownBy(() -> runtime.update("INSERT INTO sti.task_event(id, task_id, kind, actor_id, location_absent_reason, scheduled_to) VALUES (?,?, 'ESTADO', ?, 'x', current_date)",
+            UUID.randomUUID(), task, admin)).hasMessageContaining("task_event_scheduled_kind_check");
+        assertThatThrownBy(() -> runtime.update("INSERT INTO sti.task_event(id, task_id, kind, actor_id, scheduled_to) VALUES (?,?, 'FECHA', ?, current_date)",
+            UUID.randomUUID(), task, admin)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        // The rename log takes exactly one of client and project.
+        UUID company = owner.queryForObject("SELECT client_id FROM sti.project WHERE id = ?", UUID.class, project);
+        runtime.update("INSERT INTO sti.catalog_name_edit(id, client_id, old_name, new_name, actor_id) VALUES (?,?, 'A', 'B', ?)", UUID.randomUUID(), company, admin);
+        runtime.update("INSERT INTO sti.catalog_name_edit(id, project_id, old_name, new_name, actor_id) VALUES (?,?, 'A', 'B', ?)", UUID.randomUUID(), project, admin);
+        assertThatThrownBy(() -> runtime.update("INSERT INTO sti.catalog_name_edit(id, client_id, project_id, old_name, new_name, actor_id) VALUES (?,?,?, 'A', 'B', ?)",
+            UUID.randomUUID(), company, project, admin)).hasMessageContaining("catalog_name_edit_target_check");
+        assertThatThrownBy(() -> runtime.update("INSERT INTO sti.catalog_name_edit(id, old_name, new_name, actor_id) VALUES (?, 'A', 'B', ?)",
+            UUID.randomUUID(), admin)).hasMessageContaining("catalog_name_edit_target_check");
+        assertThat(owner.queryForList("SELECT version FROM sti.flyway_schema_history WHERE success ORDER BY installed_rank", String.class))
+            .containsExactly("1", "2", "3", "4", "5", "6", "7");
+    }
+
+    /** Rows of every table at schema 6, without the three columns V7 adds (they are checked apart). */
+    private static List<String> snapshot7(JdbcTemplate owner) {
+        var out = new java.util.ArrayList<String>();
+        for (String table : new String[]{"client", "project", "app_user", "account_event", "task", "task_assignment", "task_event",
+                                         "task_signature", "mail_outbox", "mail_attempt", "password_reset_token"}) {
+            out.addAll(owner.queryForList("SELECT '" + table + ":' || (to_jsonb(t) - 'scheduled_on' - 'scheduled_from' - 'scheduled_to')::text FROM sti."
+                + table + " t ORDER BY 1", String.class));
+        }
+        return out;
     }
 
     /** Rows of every table at schema 5, without the two columns V6 adds (they are checked apart). */
