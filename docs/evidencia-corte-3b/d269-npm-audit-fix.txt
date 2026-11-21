@@ -1,0 +1,32 @@
+npm 11.19.1
+--- audit despues
+found 0 vulnerabilities
+node_modules/@typescript-eslint/scope-manager 8.72.0 -> 8.73.0 dev: si
+node_modules/@typescript-eslint/types 8.72.0 -> 8.73.0 dev: si
+node_modules/@typescript-eslint/visitor-keys 8.72.0 -> 8.73.0 dev: si
+node_modules/eslint-config-next/node_modules/balanced-match 4.0.4 -> undefined dev: si
+node_modules/eslint-config-next/node_modules/brace-expansion 5.0.12 -> undefined dev: si
+node_modules/eslint-config-next/node_modules/ignore 7.0.14 -> undefined dev: si
+node_modules/eslint-config-next/node_modules/minimatch 10.2.6 -> undefined dev: si
+node_modules/eslint-config-next/node_modules/typescript-eslint 8.72.0 -> undefined dev: si
+node_modules/eslint-config-next/node_modules/typescript-eslint/node_modules/@typescript-eslint/eslint-plugin 8.72.0 -> undefined dev: si
+node_modules/eslint-config-next/node_modules/typescript-eslint/node_modules/@typescript-eslint/eslint-plugin/node_modules/@typescript-eslint/type-utils 8.72.0 -> undefined dev: si
+node_modules/eslint-config-next/node_modules/typescript-eslint/node_modules/@typescript-eslint/parser 8.72.0 -> undefined dev: si
+node_modules/eslint-config-next/node_modules/typescript-eslint/node_modules/@typescript-eslint/typescript-estree 8.72.0 -> undefined dev: si
+node_modules/eslint-config-next/node_modules/typescript-eslint/node_modules/@typescript-eslint/typescript-estree/node_modules/@typescript-eslint/project-service 8.72.0 -> undefined dev: si
+node_modules/eslint-config-next/node_modules/typescript-eslint/node_modules/@typescript-eslint/typescript-estree/node_modules/@typescript-eslint/tsconfig-utils 8.72.0 -> undefined dev: si
+node_modules/eslint-config-next/node_modules/typescript-eslint/node_modules/@typescript-eslint/utils 8.72.0 -> undefined dev: si
+node_modules/@isaacs/nonrecursive-glob-match undefined -> 1.1.0 dev: si
+node_modules/@typescript-eslint/eslint-plugin undefined -> 8.73.0 dev: si
+node_modules/@typescript-eslint/eslint-plugin/node_modules/ignore undefined -> 7.0.16 dev: si
+node_modules/@typescript-eslint/parser undefined -> 8.73.0 dev: si
+node_modules/@typescript-eslint/project-service undefined -> 8.73.0 dev: si
+node_modules/@typescript-eslint/tsconfig-utils undefined -> 8.73.0 dev: si
+node_modules/@typescript-eslint/type-utils undefined -> 8.73.0 dev: si
+node_modules/@typescript-eslint/typescript-estree undefined -> 8.73.0 dev: si
+node_modules/@typescript-eslint/typescript-estree/node_modules/balanced-match undefined -> 4.0.4 dev: si
+node_modules/@typescript-eslint/typescript-estree/node_modules/brace-expansion undefined -> 5.0.13 dev: si
+node_modules/@typescript-eslint/typescript-estree/node_modules/minimatch undefined -> 11.0.9 dev: si
+node_modules/@typescript-eslint/utils undefined -> 8.73.0 dev: si
+node_modules/typescript-eslint undefined -> 8.73.0 dev: si
+package.json igual
