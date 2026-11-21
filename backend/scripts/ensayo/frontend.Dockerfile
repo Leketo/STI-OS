@@ -5,6 +5,8 @@
 #
 # Lo arma backend/scripts/ensayo.ps1 (-Accion Interfaz y -Accion Levantar). El contexto es frontend/.
 FROM node:24.22.1-bookworm-slim
+# DEV-08 (D-261): la marca con la que ensayo.ps1 reconoce sus propias imágenes viejas para borrarlas.
+LABEL sti.ensayo=frontend
 
 WORKDIR /app
 COPY package.json package-lock.json ./

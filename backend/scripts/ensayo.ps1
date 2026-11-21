@@ -60,6 +60,11 @@ function Construir-Interfaz([string]$log) {
         --build-arg "STI_API_ORIGIN=http://127.0.0.1:$puertoBackend" --build-arg "AGENTE=$Agente" `
         -t $imagenFrontend $front *> $log
     if ($LASTEXITCODE -ne 0) { throw "La compilación de la interfaz falló ($log)" }
+    # DEV-08 (D-261): cada compilación deja la imagen anterior sin etiqueta. Se borran solo las imágenes sin etiqueta
+    # que llevan la marca sti.ensayo=frontend (frontend.Dockerfile); nada de otros proyectos.
+    $viejas = @(& docker images --filter dangling=true --filter label=sti.ensayo=frontend -q)
+    foreach ($id in $viejas) { & docker image rm $id *> $null }
+    if ($viejas.Count -gt 0) { Write-Output "Imágenes viejas del ensayo borradas: $($viejas.Count)" }
     $v = (& docker run --rm $imagenFrontend cat /node-version.txt) -join ''
     Write-Output "Interfaz compilada con Node $($v.Trim()) en $imagenFrontend (agente=$Agente)"
     Verificar-Reescrituras ((& docker run --rm $imagenFrontend cat .next/routes-manifest.json) -join "`n")
