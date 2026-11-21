@@ -14,7 +14,7 @@ const account = {
   clientId: null,
 };
 const clients = [
-  { id: "client-a", name: "Sallustro · Ejemplo" },
+  { id: "client-a", name: "Constructora Ficticia SA" },
   { id: "client-b", name: "Comercial del Sur · Ejemplo" },
 ];
 const projects = [
