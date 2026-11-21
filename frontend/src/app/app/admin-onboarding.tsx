@@ -1,21 +1,35 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   Building2,
   FolderKanban,
   LoaderCircle,
+  Pencil,
   Plus,
   Search,
 } from "lucide-react";
-import { errorFor, postWithCsrf } from "./api";
+import { errorFor, postWithCsrf, sendWithCsrf } from "./api";
 
 import { EmptyState, Panel } from "./workspace-ui";
 import type { WorkspaceData } from "./use-workspace-data";
 
 /** User management lives in users.tsx since corte 2 (ENCARGO-DEV-002). */
 type View = "clients" | "projects";
+/** Corte 3B (R-05, bocetos 7.4 and 7.5): what is being renamed. */
+type Editing = { kind: "client" | "project"; id: string; name: string; clientId?: string };
+type ClientSummary = { projects: number; tasks: number; clientUsers: number };
+type ProjectSummary = { tasks: number; byStatus: Record<string, number> };
+const STATUS_NAMES: Record<string, string> = {
+  POR_HACER: "Por hacer",
+  EN_PROCESO: "En proceso",
+  FINALIZADO: "Finalizadas",
+  FACTURADO: "Facturadas",
+  NO_FACTURABLE: "No facturables",
+  ANULADA: "Anuladas",
+};
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const content = {
   clients: {
     title: "Clientes",
@@ -37,25 +51,31 @@ export function AdminOnboarding({
   admin,
   onOpenProject,
   initialClientId = "",
+  initialClientFilter = "",
   onCreateProject,
+  onShowProjects,
 }: {
   view: View;
   data: WorkspaceData;
   admin: boolean;
   onOpenProject: (id: string) => void;
   initialClientId?: string;
+  initialClientFilter?: string;
   onCreateProject: (clientId: string) => void;
+  onShowProjects: (clientId: string) => void;
 }) {
   // Keyed form state prevents a draft for one entity from being submitted as another.
   return (
     <CatalogView
-      key={`${view}-${initialClientId}`}
+      key={`${view}-${initialClientId}-${initialClientFilter}`}
       view={view}
       data={data}
       admin={admin}
       onOpenProject={onOpenProject}
       initialClientId={initialClientId}
+      initialClientFilter={initialClientFilter}
       onCreateProject={onCreateProject}
+      onShowProjects={onShowProjects}
     />
   );
 }
@@ -65,20 +85,25 @@ function CatalogView({
   admin,
   onOpenProject,
   initialClientId = "",
+  initialClientFilter = "",
   onCreateProject,
+  onShowProjects,
 }: {
   view: View;
   data: WorkspaceData;
   admin: boolean;
   onOpenProject: (id: string) => void;
   initialClientId?: string;
+  initialClientFilter?: string;
   onCreateProject: (clientId: string) => void;
+  onShowProjects: (clientId: string) => void;
 }) {
   const { clients, projects, tasks, busy, loading, mutate } = data;
   const meta = content[view];
   const Icon = meta.icon;
   const [search, setSearch] = useState("");
-  const [clientFilter, setClientFilter] = useState("");
+  const [clientFilter, setClientFilter] = useState(initialClientFilter);
+  const [editing, setEditing] = useState<Editing | null>(null);
   const [creating, setCreating] = useState(
     view === "projects" && !!initialClientId,
   );
@@ -195,6 +220,18 @@ function CatalogView({
                     </span>
                   </div>
                   <h2>{client.name}</h2>
+                  {admin && (
+                    <button
+                      className="sti-text-action sti-edit-action"
+                      disabled={!!busy}
+                      aria-label={`Editar ${client.name}`}
+                      onClick={() =>
+                        setEditing({ kind: "client", id: client.id, name: client.name })
+                      }
+                    >
+                      <Pencil size={14} /> Editar
+                    </button>
+                  )}
                   <p>
                     {tasks.filter((t) => t.clientId === client.id).length}{" "}
                     tareas en tu alcance
@@ -253,6 +290,23 @@ function CatalogView({
                       "Cliente"}
                   </p>
                   <h2>{project.name}</h2>
+                  {admin && (
+                    <button
+                      className="sti-text-action sti-edit-action"
+                      disabled={!!busy}
+                      aria-label={`Editar ${project.name}`}
+                      onClick={() =>
+                        setEditing({
+                          kind: "project",
+                          id: project.id,
+                          name: project.name,
+                          clientId: project.clientId,
+                        })
+                      }
+                    >
+                      <Pencil size={14} /> Editar
+                    </button>
+                  )}
                   <p>
                     {related.filter((t) => t.status === "EN_PROCESO").length} en
                     proceso ·{" "}
@@ -297,6 +351,22 @@ function CatalogView({
           </EmptyState>
         )}
 
+      {editing && (
+        <EditPanel
+          key={`${editing.kind}-${editing.id}`}
+          editing={editing}
+          data={data}
+          onClose={() => setEditing(null)}
+          onShowProjects={(id) => {
+            setEditing(null);
+            onShowProjects(id);
+          }}
+          onOpenProject={(id) => {
+            setEditing(null);
+            onOpenProject(id);
+          }}
+        />
+      )}
       {creating && (
         <Panel
           title={`Nuevo ${meta.singular}`}
@@ -389,5 +459,187 @@ function CatalogView({
         </Panel>
       )}
     </>
+  );
+}
+
+/** Corte 3B (R-05, bocetos 7.4 and 7.5): ADMIN renames a company or a project. */
+function EditPanel({
+  editing,
+  data,
+  onClose,
+  onShowProjects,
+  onOpenProject,
+}: {
+  editing: Editing;
+  data: WorkspaceData;
+  onClose: () => void;
+  onShowProjects: (clientId: string) => void;
+  onOpenProject: (projectId: string) => void;
+}) {
+  const { clients, busy, mutate } = data;
+  const client = editing.kind === "client";
+  const [name, setName] = useState(editing.name);
+  const [message, setMessage] = useState("");
+  const [summary, setSummary] = useState<ClientSummary | ProjectSummary | null>(null);
+  const [summaryError, setSummaryError] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/${client ? "clients" : "projects"}/${editing.id}/summary`, {
+      credentials: "same-origin",
+      cache: "no-store",
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject(response)))
+      .then((body) => live && setSummary(body))
+      .catch(() => live && setSummaryError(true));
+    return () => {
+      live = false;
+    };
+  }, [client, editing.id]);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!name.trim()) return;
+    let refusal = "";
+    const ok = await mutate(
+      `edit-${editing.id}`,
+      async () => {
+        const response = await sendWithCsrf(
+          "PUT",
+          `/api/${client ? "clients" : "projects"}/${editing.id}`,
+          { name: name.trim() },
+        );
+        if (!response.ok) {
+          const body = (await response
+            .clone()
+            .json()
+            .catch(() => null)) as { message?: string } | null;
+          refusal = body?.message ?? "";
+        }
+        return response;
+      },
+      client ? "Cliente guardado." : "Proyecto guardado.",
+      (response) => refusal || errorFor(response),
+    );
+    if (ok) onClose();
+    else setMessage(refusal || data.mutationError.current || "No se pudo guardar.");
+  }
+
+  const clientSummary = client ? (summary as ClientSummary | null) : null;
+  const projectSummary = client ? null : (summary as ProjectSummary | null);
+  return (
+    <Panel
+      title={client ? "Editar cliente" : "Editar proyecto"}
+      eyebrow="SOLO ADMINISTRADOR"
+      busy={!!busy}
+      onClose={onClose}
+    >
+      <form className="sti-form" onSubmit={save}>
+        <div className="sti-field">
+          <label htmlFor="edit-name">
+            {client ? "Nombre de la empresa" : "Nombre del proyecto"} <span>*</span>
+          </label>
+          <input
+            id="edit-name"
+            data-autofocus
+            required
+            maxLength={200}
+            value={name}
+            disabled={!!busy}
+            onChange={(e) => {
+              setName(e.target.value);
+              setMessage("");
+            }}
+          />
+          <p className="sti-form-help">
+            {client
+              ? "No puede repetirse con otra empresa."
+              : "No puede repetirse dentro del mismo cliente."}
+          </p>
+        </div>
+        {!client && (
+          <div className="sti-field">
+            <label htmlFor="edit-client">Cliente</label>
+            <input
+              id="edit-client"
+              readOnly
+              disabled
+              value={clients.find((c) => c.id === editing.clientId)?.name ?? "Cliente"}
+            />
+            <p className="sti-form-help">
+              No se puede cambiar: las tareas del proyecto pertenecen a esta empresa.
+            </p>
+          </div>
+        )}
+        <div className="sti-edit-summary" aria-live="polite">
+          {!summary && !summaryError && <span className="sti-muted">Contando…</span>}
+          {summaryError && (
+            <span className="sti-muted">No se pudieron contar sus datos.</span>
+          )}
+          {clientSummary && (
+            <>
+              <strong>
+                {plural(clientSummary.projects, "proyecto", "proyectos")} ·{" "}
+                {plural(clientSummary.tasks, "tarea", "tareas")}
+              </strong>
+              <span>
+                {plural(clientSummary.clientUsers, "usuario cliente", "usuarios cliente")}
+              </span>
+              <button
+                type="button"
+                className="sti-text-action"
+                onClick={() => onShowProjects(editing.id)}
+              >
+                Ver proyectos <ArrowRight size={14} />
+              </button>
+            </>
+          )}
+          {projectSummary && (
+            <>
+              <strong>{plural(projectSummary.tasks, "tarea", "tareas")}</strong>
+              {projectSummary.tasks > 0 && (
+                <span>
+                  {Object.entries(projectSummary.byStatus)
+                    .map(([status, n]) => `${STATUS_NAMES[status] ?? status}: ${n}`)
+                    .join(" · ")}
+                </span>
+              )}
+              <button
+                type="button"
+                className="sti-text-action"
+                onClick={() => onOpenProject(editing.id)}
+              >
+                Ver tareas <ArrowRight size={14} />
+              </button>
+            </>
+          )}
+        </div>
+        <p className="sti-form-help">
+          El nombre nuevo se ve enseguida en el tablero, las tareas y la constancia.
+          Queda registrado quién lo cambió y cuándo.
+        </p>
+        {message && (
+          <p className="sti-inline-message" role="alert">
+            {message}
+          </p>
+        )}
+        <div className="sti-form-actions">
+          <button
+            type="button"
+            className="sti-button secondary"
+            disabled={!!busy}
+            onClick={onClose}
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            className="sti-button primary"
+            disabled={!!busy || !name.trim()}
+          >
+            {busy ? "Guardando…" : "Guardar cambios"}
+          </button>
+        </div>
+      </form>
+    </Panel>
   );
 }

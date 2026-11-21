@@ -2628,3 +2628,25 @@ html.dark .sti-logo-night {
   background: var(--sti-amber-bg);
   color: var(--sti-amber);
 }
+
+/* Corte 3B (R-05, bocetos 7.4 and 7.5): edit a client or a project. */
+.sti-edit-action {
+  align-self: flex-start;
+}
+.sti-edit-summary {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--sti-column);
+  font-size: var(--sti-font-sm);
+  overflow-wrap: anywhere;
+}
+.sti-edit-summary span {
+  color: var(--sti-muted);
+  font-size: var(--sti-font-xs);
+}
+.sti-edit-summary .sti-text-action {
+  justify-self: start;
+}

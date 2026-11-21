@@ -44,6 +44,8 @@ export function Workspace({ account }: { account: Account }) {
   const [personFilter, setPersonFilter] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
   const [newProjectClient, setNewProjectClient] = useState("");
+  // Corte 3B: "Ver proyectos" in the client edit panel opens Proyectos filtered by that client.
+  const [projectsOfClient, setProjectsOfClient] = useState("");
   const views: View[] =
     account.role === "ADMIN"
       ? ["tasks", "clients", "projects", "users"]
@@ -115,6 +117,7 @@ export function Workspace({ account }: { account: Account }) {
     setView(next);
     setMobileNav(false);
     setNewProjectClient("");
+    setProjectsOfClient("");
     setPersonFilter(person);
     if (data.notice?.kind === "success") data.dismissNotice();
     window.history.pushState(null, "", `#${next}`);
@@ -274,9 +277,14 @@ export function Workspace({ account }: { account: Account }) {
               admin={account.role === "ADMIN"}
               onOpenProject={openProject}
               initialClientId={newProjectClient}
+              initialClientFilter={projectsOfClient}
               onCreateProject={(clientId) => {
                 navigate("projects");
                 setNewProjectClient(clientId);
+              }}
+              onShowProjects={(clientId) => {
+                navigate("projects");
+                setProjectsOfClient(clientId);
               }}
             />
           )}
