@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 
 const OUT = process.argv[2];
 const IDS = JSON.parse(fs.readFileSync(process.argv[3], 'utf8').replace(/^﻿/, ''));
@@ -143,7 +144,7 @@ const PLAN = {
   '13-filtros-activos': ['360:light', '360:dark', '390:light'],
 };
 const index = [];
-for (const [name, what, steps] of SHOTS) {
+for (const [name, what, steps] of IDS.rolesOnly ? [] : SHOTS) {
   for (const variant of PLAN[name]) {
     const [size, theme] = variant.split(':');
     const [width, height, scale] = SIZES[size];
@@ -161,6 +162,73 @@ for (const [name, what, steps] of SHOTS) {
     fs.writeFileSync(path.join(OUT, file), Buffer.from(shot.data, 'base64'));
     index.push({ file, what, size, theme: theme === 'light' ? 'día' : 'noche', overflow, note });
     console.log(file, `desborde=${overflow}`, note);
+  }
+}
+// The other three roles (CA-65, CA-66, CA-67), on fake accounts of the matrix. Their passwords are drawn in each
+// matrix run and kept nowhere, so the ADMIN resets each one and the script makes the first sign-in with a random
+// password that lives only in this process, as the matrix does.
+const csrfFetch = (url, method, body, form = false) => `
+  const c = await fetch('/api/auth/csrf').then((r) => r.json());
+  return (await fetch(${JSON.stringify(url)}, { method: ${JSON.stringify(method)}, headers: { [c.headerName || 'X-CSRF-TOKEN']: c.token,
+    'content-type': ${JSON.stringify(form ? 'application/x-www-form-urlencoded' : 'application/json')} },
+    body: ${form ? 'new URLSearchParams(' + JSON.stringify(body) + ')' : JSON.stringify(JSON.stringify(body))} })).status;`;
+const signInAs = async (email) => {
+  await go(`${BASE}/login`);
+  const relog = await run(csrfFetch('/api/auth/login', 'POST', { username: IDS.adminEmail, password: pass }, true));
+  const id = await run(`return (await fetch('/api/accounts').then((r) => r.json())).find((a) => a.email === ${JSON.stringify(email)})?.id;`);
+  const initial = await run(`
+    const c = await fetch('/api/auth/csrf').then((r) => r.json());
+    return (await fetch('/api/accounts/${id}/password-reset', { method: 'POST', headers: { [c.headerName || 'X-CSRF-TOKEN']: c.token, 'content-type': 'application/json' }, body: '{}' }).then((r) => r.json())).initialPassword;`);
+  await run(csrfFetch('/api/auth/logout', 'POST', {}));
+  const chosen = 'Captura-' + crypto.randomBytes(12).toString('base64url');
+  const first = await run(csrfFetch('/api/auth/login', 'POST', { username: email, password: initial }, true));
+  const change = await run(csrfFetch('/api/auth/password', 'POST', { newPassword: chosen }));
+  await run(csrfFetch('/api/auth/logout', 'POST', {}));
+  const login = await run(csrfFetch('/api/auth/login', 'POST', { username: email, password: chosen }, true));
+  return `${relog} ${first} ${change} ${login}`;
+};
+const newTask = `
+  await until(() => byText('button', 'Nueva tarea') && !byText('button', 'Nueva tarea').disabled); byText('button', 'Nueva tarea').click();
+  await until(() => q('#task-title')); await wait(600);
+  return q('dialog[open] .sti-assign-block') ? 'con el bloque Asignación' : 'sin el bloque Asignación';`;
+const fechas = `${openTask(IDS.finished)} panelTo(sectionByTitle('Fechas'));
+  return [...sectionByTitle('Fechas').querySelectorAll('tr, .sti-date-row, dt, dd')].map((e) => e.innerText.replace(/\\s+/g, ' ')).join(' | ').slice(0, 900);`;
+const ROLES = [
+  ['SUPERVISOR', IDS.supervisorEmail, [
+    ['20-supervisor-fechas', 'SUPERVISOR: bloque Fechas', fechas],
+  ]],
+  ['USUARIO', IDS.technicianEmail, [
+    ['21-tecnico-nueva-tarea', 'USUARIO: Nueva tarea, sin el bloque Asignación', newTask],
+    ['22-tecnico-fecha', 'USUARIO asignado: el recuadro de la fecha, sin "Cambiar"', `${openTask(IDS.rescheduled)}
+      panelTo(q('dialog[open] .sti-schedule-box') ?? sectionByTitle('Responsables'));
+      return byText('dialog[open] button', 'Cambiar') || byText('dialog[open] button', 'Poner') ? 'con botón para cambiar la fecha' : 'sin botón para cambiar la fecha';`],
+    ['23-tecnico-fechas', 'USUARIO: bloque Fechas', fechas],
+  ]],
+  ['CLIENTE', IDS.customerEmail, [
+    ['24-cliente-nueva-tarea', 'CLIENTE: Nueva tarea, sin el bloque Asignación', newTask],
+    ['25-cliente-fechas', 'CLIENTE: bloque Fechas', fechas],
+  ]],
+];
+if (IDS.customerEmail) {
+  for (const [role, email, shots] of ROLES) {
+    console.log(role, 'ingreso (reingreso ADMIN, inicial, cambio, final):', await signInAs(email));
+    for (const [name, what, steps] of shots) {
+      for (const size of ['escritorio', '390']) {
+        const [width, height, scale] = SIZES[size];
+        await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: scale, mobile: size !== 'escritorio' });
+        await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+        await run(`localStorage.setItem('sti-theme', 'light');`);
+        await go(`${BASE}/app#tasks`);
+        let note = '';
+        try { note = (await run(steps)) ?? ''; } catch (error) { note = 'FALLA: ' + error.message.split('\n')[0]; }
+        const overflow = await run(`return document.documentElement.scrollWidth - window.innerWidth;`);
+        const file = `${name}-${size}-dia.jpg`;
+        const shot = await send('Page.captureScreenshot', { format: 'jpeg', quality: 82 });
+        fs.writeFileSync(path.join(OUT, file), Buffer.from(shot.data, 'base64'));
+        index.push({ file, what, size, theme: 'día', overflow, note });
+        console.log(file, `desborde=${overflow}`, note);
+      }
+    }
   }
 }
 fs.writeFileSync(path.join(OUT, 'indice.json'), JSON.stringify(index, null, 2));

@@ -52,3 +52,26 @@
 | 13-filtros-activos-360-dia.jpg | Barra con "Filtros activos" (N-31) | 360 | día | 0 |
 | 13-filtros-activos-360-noche.jpg | Barra con "Filtros activos" (N-31) | 360 | noche | 0 |
 | 13-filtros-activos-390-dia.jpg | Barra con "Filtros activos" (N-31) | 390 | día | 0 |
+
+## Los otros roles (CA-65, CA-66 y CA-67)
+
+- **Cuándo:** 2026-11-21, alrededor de las 02:05, sobre el mismo ambiente.
+- **Cuentas:** SUPERVISOR, USUARIO (Tomás Técnico) y CLIENTE (Carla Cliente, Constructora), todas de la matriz y con datos falsos.
+- **Cómo se ingresó:** sus contraseñas se sortean en cada corrida y no se guardan. El ADMIN las blanqueó y el script hizo el primer ingreso con una contraseña al azar, que solo existió en memoria, como hace la matriz. Las respuestas: 204 204 204 204 por rol.
+- **Bloque Fechas:** el texto leído de la página, el de TAR-0072, es el mismo en los cuatro roles (también como ADMIN, captura 06).
+- **Contra la constancia de la misma tarea:** Solicitud, Atención y Finalizada (21/11/2026 01:45) coinciden con Cargada, Iniciada y Terminada. Todos los eventos de esa tarea son del mismo minuto, así que la comparación no distingue un evento de otro.
+
+| Archivo | Qué muestra | Ancho | Desborde (px) | Lo que midió el script |
+|---|---|---|---|---|
+| 20-supervisor-fechas-escritorio-dia.jpg | SUPERVISOR: bloque Fechas | escritorio | 0 | el bloque Fechas leído (igual en los cuatro roles) |
+| 20-supervisor-fechas-390-dia.jpg | SUPERVISOR: bloque Fechas | 390 | 0 | el bloque Fechas leído (igual en los cuatro roles) |
+| 21-tecnico-nueva-tarea-escritorio-dia.jpg | USUARIO: Nueva tarea, sin el bloque Asignación | escritorio | 0 | sin el bloque Asignación |
+| 21-tecnico-nueva-tarea-390-dia.jpg | USUARIO: Nueva tarea, sin el bloque Asignación | 390 | 0 | sin el bloque Asignación |
+| 22-tecnico-fecha-escritorio-dia.jpg | USUARIO asignado: el recuadro de la fecha, sin "Cambiar" | escritorio | 0 | sin botón para cambiar la fecha |
+| 22-tecnico-fecha-390-dia.jpg | USUARIO asignado: el recuadro de la fecha, sin "Cambiar" | 390 | 0 | sin botón para cambiar la fecha |
+| 23-tecnico-fechas-escritorio-dia.jpg | USUARIO: bloque Fechas | escritorio | 0 | el bloque Fechas leído (igual en los cuatro roles) |
+| 23-tecnico-fechas-390-dia.jpg | USUARIO: bloque Fechas | 390 | 0 | el bloque Fechas leído (igual en los cuatro roles) |
+| 24-cliente-nueva-tarea-escritorio-dia.jpg | CLIENTE: Nueva tarea, sin el bloque Asignación | escritorio | 0 | sin el bloque Asignación |
+| 24-cliente-nueva-tarea-390-dia.jpg | CLIENTE: Nueva tarea, sin el bloque Asignación | 390 | 0 | sin el bloque Asignación |
+| 25-cliente-fechas-escritorio-dia.jpg | CLIENTE: bloque Fechas | escritorio | 0 | el bloque Fechas leído (igual en los cuatro roles) |
+| 25-cliente-fechas-390-dia.jpg | CLIENTE: bloque Fechas | 390 | 0 | el bloque Fechas leído (igual en los cuatro roles) |

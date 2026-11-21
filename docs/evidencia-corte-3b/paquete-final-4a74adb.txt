@@ -1,0 +1,12 @@
+Repetición sobre la imagen del contenedor sti-ensayo-frontend, compilada a las 01:41 (04:41 UTC) con Node 24.22.1. La compilación usó el árbol con el cambio de DEV-10 todavía sin confirmar; ese cambio se confirmó igual en 4a74adb. Desde entonces el frontend no cambió.
+imagen: 0f24261f0cb1
+Sallustro en /app (paquete entero): 0
+Direcciones del prototipo en .next/server/app: 0
+GET /demo -> 404
+GET /inbox -> 404
+GET /my-work -> 404
+GET /projects/proj-1 -> 404
+GET /views -> 404
+GET /login -> 200
+GET /app -> 307
+La palabra demo en el HTML de /login: 0
