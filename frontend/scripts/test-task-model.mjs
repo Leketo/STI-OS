@@ -19,6 +19,14 @@ import {
   canDownloadRecord,
   statusLabel,
   STAGES,
+  longDay,
+  dayText,
+  shortDay,
+  scheduleProblem,
+  canSchedule,
+  isOverdue,
+  rescheduledText,
+  taskDates,
 } from "../src/app/app/task-model.ts";
 import { leaveIfSessionEnded, signInRefusal } from "../src/app/app/api.ts";
 const task = {
@@ -348,4 +356,72 @@ test("R-21: the service record is offered on finished and closed tasks, never to
   }
   for (const status of ["POR_HACER", "EN_PROCESO", "ANULADA"])
     for (const role of ["ADMIN", "SUPERVISOR", "CLIENTE", "USUARIO"]) assert.equal(canDownloadRecord({ status }, role), false);
+});
+
+// ---------- Corte 3B ----------
+test("the day is written in Spanish, with the year only when it is not this one", () => {
+  assert.equal(longDay("2026-11-24", "2026-11-20"), "Martes 24 de noviembre");
+  assert.equal(longDay("2027-01-01", "2026-11-20"), "Viernes 1 de enero de 2027");
+  assert.equal(dayText("2026-11-24", "2026-11-20"), "24 de noviembre");
+  assert.equal(longDay("", "2026-11-20"), "");
+});
+test("cards show 17 nov, the Paraguay day of a timestamp, and — when missing", () => {
+  assert.equal(shortDay("2026-11-17"), "17 nov");
+  assert.equal(shortDay(null), "—");
+  // 02:30 UTC on the 18th is still the 17th in Paraguay (UTC-3).
+  assert.equal(shortDay("2026-11-18T02:30:00Z"), "17 nov");
+});
+test("D-264: the day is within five years back and ahead", () => {
+  assert.equal(scheduleProblem("2026-11-24", "2026-11-20"), "");
+  assert.equal(scheduleProblem("2021-11-20", "2026-11-20"), "");
+  assert.notEqual(scheduleProblem("2021-11-19", "2026-11-20"), "");
+  assert.notEqual(scheduleProblem("2031-11-21", "2026-11-20"), "");
+  assert.notEqual(scheduleProblem("", "2026-11-20"), "");
+});
+test("D-259: only ADMIN and SUPERVISOR change the day, and only in Por hacer or En proceso", () => {
+  for (const role of ["ADMIN", "SUPERVISOR"]) {
+    assert.equal(canSchedule({ status: "POR_HACER" }, role), true);
+    assert.equal(canSchedule({ status: "EN_PROCESO" }, role), true);
+    assert.equal(canSchedule({ status: "FINALIZADO" }, role), false);
+    assert.equal(canSchedule({ status: "FACTURADO" }, role), false);
+  }
+  for (const role of ["USUARIO", "CLIENTE"]) assert.equal(canSchedule({ status: "POR_HACER" }, role), false);
+});
+test("D-246: Atrasada when the day passed and the work is still open", () => {
+  assert.equal(isOverdue({ status: "POR_HACER", scheduledOn: "2026-11-19" }, "2026-11-20"), true);
+  assert.equal(isOverdue({ status: "EN_PROCESO", scheduledOn: "2026-11-19" }, "2026-11-20"), true);
+  assert.equal(isOverdue({ status: "POR_HACER", scheduledOn: "2026-11-20" }, "2026-11-20"), false);
+  assert.equal(isOverdue({ status: "FINALIZADO", scheduledOn: "2026-11-01" }, "2026-11-20"), false);
+  assert.equal(isOverdue({ status: "POR_HACER", scheduledOn: null }, "2026-11-20"), false);
+});
+test("history and reschedule texts", () => {
+  assert.equal(rescheduledText(0), "");
+  assert.equal(rescheduledText(1), "Reprogramada 1 vez");
+  assert.equal(rescheduledText(3), "Reprogramada 3 veces");
+  const base = { actorName: "Ana", occurredAt: "2026-11-20T12:00:00Z", fromStatus: null, toStatus: null, locationAbsentReason: null };
+  assert.match(eventLabel({ ...base, id: "1", kind: "ASIGNADA", subjectName: "Luis", scheduledTo: "2026-11-24" }), /^Asignó a Luis · para el 24 de noviembre/);
+  assert.match(eventLabel({ ...base, id: "2", kind: "FECHA", scheduledFrom: "2026-11-24", scheduledTo: "2026-11-26" }), /^Cambió la fecha de asignación · 24 de noviembre.* → 26 de noviembre/);
+});
+test("Fechas: Terminada is — after a reopening, and Programada shows the previous day", () => {
+  const ev = (id, kind, extra) => ({ id, kind, actorName: "Ana", occurredAt: `2026-11-20T1${id}:00:00Z`, fromStatus: null, toStatus: null, locationAbsentReason: null, ...extra });
+  const detail = {
+    id: "t", status: "EN_PROCESO", createdAt: "2026-11-20T10:00:00Z", scheduledOn: "2026-11-26", finishedAt: null,
+    photos: [], signatures: [],
+    events: [
+      ev("0", "CREADA", { toStatus: "POR_HACER" }),
+      ev("1", "ASIGNADA", { subjectName: "Luis", subjectId: "u", scheduledTo: "2026-11-24" }),
+      ev("2", "ESTADO", { fromStatus: "POR_HACER", toStatus: "EN_PROCESO" }),
+      ev("3", "ESTADO", { fromStatus: "EN_PROCESO", toStatus: "FINALIZADO" }),
+      ev("4", "ESTADO", { fromStatus: "FINALIZADO", toStatus: "EN_PROCESO" }),
+      ev("5", "FECHA", { scheduledFrom: "2026-11-24", scheduledTo: "2026-11-26" }),
+    ],
+  };
+  const rows = Object.fromEntries(taskDates(detail).map((r) => [r.label, r]));
+  assert.equal(rows["Terminada"].when, null);
+  assert.equal(rows["Terminada"].detail, "Todavía no");
+  assert.equal(rows["Programada para"].day, "2026-11-26");
+  assert.match(rows["Programada para"].detail, /^Antes: 24 de noviembre.* · cambiada por Ana el /);
+  assert.equal(rows["Asignada"].detail, "Ana asignó a Luis");
+  assert.equal(rows["Iniciada"].when, "2026-11-20T12:00:00Z");
+  assert.equal(rows["Firmada"].when, null);
 });

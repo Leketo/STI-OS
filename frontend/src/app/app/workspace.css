@@ -2457,3 +2457,174 @@ html.dark .sti-logo-night {
     white-space: nowrap;
   }
 }
+
+/* Corte 3B (R-10, R-25, D-246): the scheduled day, the date strip on the cards, "Atrasada" and the "Fechas" block. */
+.sti-status.overdue {
+  background: var(--sti-amber-bg);
+  color: var(--sti-amber);
+}
+.sti-task-card > .sti-status.overdue {
+  align-self: flex-start;
+}
+.sti-task-dates {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--sti-border);
+}
+.sti-task-dates div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.sti-task-dates dt {
+  color: var(--sti-muted);
+  font-size: 11px;
+}
+.sti-task-dates dd {
+  margin: 0;
+  font-size: var(--sti-font-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sti-task-dates .is-overdue dd,
+.sti-overdue-text {
+  color: var(--sti-amber);
+}
+.sti-overdue-text .sti-status {
+  margin-left: 6px;
+}
+.sti-schedule-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--sti-border);
+  border-radius: 12px;
+  background: var(--sti-column);
+}
+.sti-schedule-box > div {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.sti-schedule-box span {
+  color: var(--sti-muted);
+  font-size: var(--sti-font-xs);
+}
+.sti-schedule-box small {
+  color: var(--sti-muted);
+  font-size: var(--sti-font-xs);
+}
+.sti-schedule-box.is-overdue {
+  border-color: var(--sti-amber);
+  background: var(--sti-amber-bg);
+}
+.sti-schedule-box.is-overdue strong,
+.sti-schedule-box.is-overdue small,
+.sti-schedule-box.is-overdue svg {
+  color: var(--sti-amber);
+}
+.sti-button.small {
+  min-height: 36px;
+  padding: 6px 14px;
+  flex-shrink: 0;
+}
+.sti-dates-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.sti-dates-table th,
+.sti-dates-table td {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--sti-border);
+  text-align: left;
+  vertical-align: top;
+}
+.sti-dates-table th {
+  width: 38%;
+  padding-right: 10px;
+  color: var(--sti-muted);
+  font-size: var(--sti-font-xs);
+  font-weight: 600;
+}
+.sti-dates-table td {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--sti-font-sm);
+}
+.sti-dates-table td small {
+  color: var(--sti-muted);
+  font-size: var(--sti-font-xs);
+  overflow-wrap: anywhere;
+}
+.sti-assign-block {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid var(--sti-border);
+  border-radius: 12px;
+  min-width: 0;
+}
+.sti-assign-block legend {
+  padding: 0 6px;
+  font-size: var(--sti-font-sm);
+  font-weight: 650;
+}
+.sti-assign-block legend small {
+  margin-left: 6px;
+  color: var(--sti-muted);
+  font-size: var(--sti-font-xs);
+  font-weight: 500;
+}
+.sti-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.sti-person-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 4px 3px 4px;
+  border: 1px solid var(--sti-border);
+  border-radius: 99px;
+  font-size: var(--sti-font-xs);
+  overflow-wrap: anywhere;
+}
+.sti-person-chip .sti-icon-button {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+.sti-day-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.sti-day-input input {
+  flex: 0 1 190px;
+  min-width: 0;
+}
+.sti-day-input span {
+  font-size: var(--sti-font-sm);
+  font-weight: 600;
+}
+.sti-notice-amber {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sti-amber-bg);
+  color: var(--sti-amber);
+}

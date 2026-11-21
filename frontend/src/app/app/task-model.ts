@@ -136,6 +136,12 @@ export type Task = {
   photoCount: number;
   signed: boolean;
   closingReason?: string | null;
+  /** Corte 3B (R-10): the day the work is scheduled for, YYYY-MM-DD, or null ("Sin fecha"). */
+  scheduledOn?: string | null;
+  /** How many times the day was changed after it had one. */
+  rescheduled?: number;
+  /** "Terminada" (D-224): the last time the work finished; null while open again. */
+  finishedAt?: string | null;
 };
 export type Photo = {
   id: string;
@@ -163,6 +169,9 @@ export type TaskEvent = {
   occurredAt: string;
   locationAbsentReason: string | null;
   closingReason?: string | null;
+  subjectName?: string | null;
+  scheduledFrom?: string | null;
+  scheduledTo?: string | null;
 };
 export type Detail = Task & {
   events: TaskEvent[];
@@ -337,6 +346,13 @@ export function initials(name: string): string {
     .toUpperCase();
 }
 export function eventLabel(event: TaskEvent): string {
+  // Corte 3B (R-10, point 7).
+  if (event.kind === "ASIGNADA" && event.scheduledTo)
+    return `Asignó a ${event.subjectName ?? "una persona"} · para el ${dayText(event.scheduledTo)}`;
+  if (event.kind === "FECHA")
+    return event.scheduledFrom
+      ? `Cambió la fecha de asignación · ${dayText(event.scheduledFrom)} → ${dayText(event.scheduledTo ?? "")}`
+      : `Puso la fecha de asignación · ${dayText(event.scheduledTo ?? "")}`;
   if (event.kind === "ESTADO" && event.toStatus === "FINALIZADO" && event.subjectId)
     return "Finalizó la tarea al quitar a la única persona pendiente";
   if (event.kind === "ESTADO" && event.toStatus === "NO_FACTURABLE")
@@ -356,4 +372,184 @@ export function eventLabel(event: TaskEvent): string {
       } as Record<string, string>
     )[event.kind] ?? "Actualizó la tarea"
   );
+}
+
+// ---------- Corte 3B: the scheduled day and the date of each action (R-10, R-25, R-02, D-246) ----------
+
+const MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
+  "noviembre", "diciembre"];
+const WEEKDAYS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+
+function dayParts(day: string): { year: number; month: number; date: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!match) return null;
+  return { year: Number(match[1]), month: Number(match[2]), date: Number(match[3]) };
+}
+
+/** "Martes 24 de noviembre", next to a date field; the year only when it is not this one. */
+export function longDay(day: string, today: string = paraguayDate()): string {
+  const parts = dayParts(day);
+  if (!parts) return "";
+  const weekday = WEEKDAYS[new Date(Date.UTC(parts.year, parts.month - 1, parts.date)).getUTCDay()];
+  const year = dayParts(today)?.year === parts.year ? "" : ` de ${parts.year}`;
+  return `${weekday} ${parts.date} de ${MONTHS[parts.month - 1]}${year}`;
+}
+
+/** "24 de noviembre", inside sentences of the log; with the year when it is not this one. */
+export function dayText(day: string, today: string = paraguayDate()): string {
+  const long = longDay(day, today);
+  return long ? long.slice(long.indexOf(" ") + 1) : "";
+}
+
+/** "17 nov" on the cards (point 11); a timestamp counts by its day in Paraguay. "—" when missing. */
+export function shortDay(value: string | null | undefined): string {
+  if (!value) return "—";
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : paraguayDate(new Date(value));
+  const parts = dayParts(day);
+  return parts ? `${parts.date} ${MONTHS[parts.month - 1].slice(0, 3)}` : "—";
+}
+
+/** "17 nov 2026, 14:05", Paraguay's date and hour, for the "Fechas" block (point 10). */
+export function paraguayDateTime(value: string): string {
+  const instant = new Date(value);
+  const time = new Intl.DateTimeFormat("es-PY", {
+    timeZone: "America/Asuncion",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(instant);
+  const parts = dayParts(paraguayDate(instant));
+  return parts ? `${parts.date} ${MONTHS[parts.month - 1].slice(0, 3)} ${parts.year}, ${time}` : "";
+}
+
+/** D-264: from five years back to five years ahead of today in Paraguay, as the date field's min and max. */
+export function scheduleRange(today: string = paraguayDate()): { min: string; max: string } {
+  const parts = dayParts(today);
+  if (!parts) return { min: "", max: "" };
+  const shift = (years: number) => `${parts.year + years}${today.slice(4)}`;
+  return { min: shift(-5), max: shift(5) };
+}
+export function scheduleProblem(day: string, today: string = paraguayDate()): string {
+  if (!day) return "Elegí el día.";
+  const { min, max } = scheduleRange(today);
+  if (!dayParts(day) || day < min || day > max)
+    return "La fecha tiene que estar entre 5 años atrás y 5 años adelante.";
+  return "";
+}
+
+/** D-259: ADMIN and SUPERVISOR set or change the day, only in Por hacer and En proceso. */
+export function canSchedule(task: Pick<Task, "status">, role: Role): boolean {
+  return isOperator(role) && (task.status === "POR_HACER" || task.status === "EN_PROCESO");
+}
+
+/** D-246: "Atrasada" when the day is before today and the work is still to do or in progress. */
+export function isOverdue(task: Pick<Task, "status" | "scheduledOn">, today: string = paraguayDate()): boolean {
+  return (
+    !!task.scheduledOn &&
+    task.scheduledOn < today &&
+    (task.status === "POR_HACER" || task.status === "EN_PROCESO")
+  );
+}
+
+/** "Reprogramada 1 vez" / "N veces"; nothing when it never changed. */
+export function rescheduledText(times: number | undefined): string {
+  if (!times) return "";
+  return `Reprogramada ${times} ${times === 1 ? "vez" : "veces"}`;
+}
+
+/** `when` is an instant (date and hour); `day` only for "Programada para", which is a day without hour. */
+export type DateRow = { label: string; when: string | null; day?: string | null; detail: string };
+
+/**
+ * The "Fechas" block (point 10): each action with its date and hour in Paraguay, read from the log. Iniciada and
+ * Terminada follow the service record (D-201, D-224).
+ */
+export function taskDates(task: Detail): DateRow[] {
+  const events = task.events;
+  const created = events.find((e) => e.kind === "CREADA");
+  const assigned = events.filter((e) => e.kind === "ASIGNADA");
+  const lastAssigned = assigned[assigned.length - 1];
+  // Who assigned whom in the last assignment: the same person, within a few seconds (creation assigns several).
+  const lastGroup = lastAssigned
+    ? assigned.filter(
+        (e) =>
+          e.actorName === lastAssigned.actorName &&
+          Math.abs(new Date(lastAssigned.occurredAt).getTime() - new Date(e.occurredAt).getTime()) < 5000,
+      )
+    : [];
+  const changes = events.filter((e) => e.kind === "FECHA" && e.scheduledFrom);
+  const lastChange = changes[changes.length - 1];
+  const started = events.find((e) => e.kind === "ESTADO" && e.toStatus === "EN_PROCESO");
+  const finishes = events.filter(
+    (e) =>
+      e.kind === "ESTADO" &&
+      e.toStatus === "FINALIZADO" &&
+      e.fromStatus !== "FACTURADO" &&
+      e.fromStatus !== "NO_FACTURABLE",
+  );
+  const finished = task.finishedAt ? finishes[finishes.length - 1] : undefined;
+  const lastConfirmation = finished
+    ? events.filter((e) => e.kind === "CONFIRMACION" && e.occurredAt <= finished.occurredAt).pop()
+    : undefined;
+  const signature = (task as Detail & { signatures?: Signature[] }).signatures?.find((s) => s.current);
+  const closedStatus = isClosed(task.status) ? task.status : null;
+  const closed = closedStatus
+    ? events.filter((e) => e.kind === "ESTADO" && e.toStatus === closedStatus).pop()
+    : undefined;
+  return [
+    {
+      label: "Cargada",
+      when: created?.occurredAt ?? task.createdAt,
+      detail: created ? `Por ${created.actorName}` : "",
+    },
+    {
+      label: "Asignada",
+      when: lastAssigned?.occurredAt ?? null,
+      detail: lastAssigned
+        ? `${lastAssigned.actorName} asignó a ${lastGroup.map((e) => e.subjectName ?? "una persona").join(", ")}`
+        : "Todavía no",
+    },
+    {
+      label: "Programada para",
+      when: null,
+      day: task.scheduledOn ?? null,
+      detail: !task.scheduledOn
+        ? "Todavía no"
+        : lastChange
+          ? `Antes: ${dayText(lastChange.scheduledFrom ?? "")} · cambiada por ${lastChange.actorName} el ${paraguayDateTime(lastChange.occurredAt)}`
+          : "",
+    },
+    {
+      label: "Iniciada",
+      when: started?.occurredAt ?? null,
+      detail: started ? `Por ${started.actorName}` : "Todavía no",
+    },
+    {
+      label: "Terminada",
+      when: finished?.occurredAt ?? null,
+      detail: finished
+        ? finished.subjectId
+          ? `Al quitar a ${finished.subjectName ?? "la única persona pendiente"}`
+          : lastConfirmation
+            ? `Última confirmación: ${lastConfirmation.actorName}`
+            : `Por ${finished.actorName}`
+        : "Todavía no",
+    },
+    {
+      label: "Firmada",
+      when: signature?.signedAt ?? null,
+      detail: signature
+        ? `${signature.signerName} · ${signature.remote ? "A distancia" : "Presencial"}`
+        : "Todavía no",
+    },
+    {
+      label: "Facturada o cerrada",
+      when: closed?.occurredAt ?? null,
+      detail: closed
+        ? `${closed.toStatus === "NO_FACTURABLE" ? "No facturable" : "Facturada"} · ${closed.actorName}${
+            reasonLabel(closed.closingReason) ? ` · ${reasonLabel(closed.closingReason)}` : ""
+          }`
+        : "Todavía no",
+    },
+  ];
 }

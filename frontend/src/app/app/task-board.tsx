@@ -10,6 +10,7 @@ import {
 } from "@hello-pangea/dnd";
 import {
   ArrowRight,
+  CalendarDays,
   Check,
   CheckCheck,
   Circle,
@@ -61,6 +62,15 @@ import {
   CLOSING_REASONS,
   STAGES,
   visibleStatuses,
+  canSchedule,
+  isOverdue,
+  longDay,
+  paraguayDateTime,
+  rescheduledText,
+  scheduleProblem,
+  scheduleRange,
+  shortDay,
+  taskDates,
   type Account,
   type Detail,
   type Task,
@@ -91,6 +101,57 @@ const toneOf = (status: string) =>
   status === "NO_FACTURABLE"
     ? "neutral"
     : (STAGES.find((s) => s.status === status)?.tone ?? "neutral");
+/** The server's own sentence when it sends one ({status, code, message}); otherwise the generic text. */
+async function refusalText(response: Response): Promise<string> {
+  const body = (await response
+    .clone()
+    .json()
+    .catch(() => null)) as { message?: string } | null;
+  return body?.message || errorFor(response);
+}
+type ScheduleDialog = {
+  task: Task;
+  /** "assign": pick the day to assign a dateless task (boceto 7.3); "schedule": set or change it (7.2). */
+  mode: "assign" | "schedule";
+  userId?: string;
+  userName?: string;
+};
+/** A date field with the day written beside it ("Martes 24 de noviembre"). */
+function DayField({
+  id,
+  label,
+  help,
+  value,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  help: string;
+  value: string;
+  disabled: boolean;
+  onChange: (day: string) => void;
+}) {
+  const range = scheduleRange();
+  return (
+    <div className="sti-field sti-day-field">
+      <label htmlFor={id}>{label}</label>
+      <div className="sti-day-input">
+        <input
+          id={id}
+          type="date"
+          min={range.min}
+          max={range.max}
+          value={value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        {value && <span aria-live="polite">{longDay(value)}</span>}
+      </div>
+      <p className="sti-form-help">{help}</p>
+    </div>
+  );
+}
 const dateTime = (value: string) =>
   new Intl.DateTimeFormat("es-PY", {
     dateStyle: "medium",
@@ -121,6 +182,14 @@ export function TaskBoard({
   const [newClient, setNewClient] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  // Corte 3B (R-10, boceto 2.2): people and the day at creation, ADMIN and SUPERVISOR only.
+  const [newAssignees, setNewAssignees] = useState<string[]>([]);
+  const [newDay, setNewDay] = useState("");
+  const [scheduleDialog, setScheduleDialog] = useState<ScheduleDialog | null>(
+    null,
+  );
+  const [scheduleDay, setScheduleDay] = useState("");
+  const [scheduleError, setScheduleError] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [opened, setOpened] = useState<Detail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -335,6 +404,14 @@ export function TaskBoard({
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!title.trim() || !newProject) return;
+    if (operator && newAssignees.length && scheduleProblem(newDay)) {
+      setPanelMessage(
+        newDay
+          ? scheduleProblem(newDay)
+          : "Con responsables, la fecha de asignación es obligatoria.",
+      );
+      return;
+    }
     const ok = await mutate(
       "new",
       async () =>
@@ -343,12 +420,18 @@ export function TaskBoard({
           title: title.trim(),
           detail: description.trim() || null,
           location: await deviceLocation(),
+          ...(operator && newAssignees.length
+            ? { assignees: newAssignees }
+            : {}),
+          ...(operator && newDay ? { scheduledOn: newDay } : {}),
         }),
       "Tarea creada en Por hacer.",
     );
     if (ok) {
       setTitle("");
       setDescription("");
+      setNewAssignees([]);
+      setNewDay("");
       setCreating(false);
       setMobileStage("POR_HACER");
     } else
@@ -356,6 +439,65 @@ export function TaskBoard({
         data.mutationError.current ||
           "No se pudo confirmar el alta. Se conservó lo que escribiste.",
       );
+  }
+  function openSchedule(dialog: ScheduleDialog) {
+    setScheduleError("");
+    setScheduleDay(dialog.task.scheduledOn ?? "");
+    setScheduleDialog(dialog);
+  }
+  function assignPerson(task: Task, userId: string) {
+    const person = operators.find((p) => p.id === userId);
+    // Point 5: a task without a day asks for it first; one with a day assigns at once.
+    if (!task.scheduledOn) {
+      openSchedule({ task, mode: "assign", userId, userName: person?.name });
+      return;
+    }
+    let refusal = "";
+    void act(
+      task,
+      async () => {
+        const response = await postWithCsrf(
+          `/api/tasks/${task.id}/assignments`,
+          { userId },
+        );
+        if (!response.ok) refusal = await refusalText(response);
+        return response;
+      },
+      "Responsable asignado.",
+      (response) => refusal || errorFor(response),
+    );
+  }
+  async function saveSchedule() {
+    if (!scheduleDialog) return;
+    const problem = scheduleProblem(scheduleDay);
+    if (problem) {
+      setScheduleError(problem);
+      return;
+    }
+    const { task, mode, userId } = scheduleDialog;
+    let refusal = "";
+    const ok = await act(
+      task,
+      async () => {
+        const response =
+          mode === "assign"
+            ? await postWithCsrf(`/api/tasks/${task.id}/assignments`, {
+                userId,
+                scheduledOn: scheduleDay,
+              })
+            : await postWithCsrf(`/api/tasks/${task.id}/schedule`, {
+                scheduledOn: scheduleDay,
+              });
+        if (!response.ok) refusal = await refusalText(response);
+        return response;
+      },
+      mode === "assign"
+        ? "Responsable asignado."
+        : "Fecha de asignación guardada.",
+      (response) => refusal || errorFor(response),
+    );
+    if (ok) setScheduleDialog(null);
+    else setScheduleError(refusal || data.mutationError.current);
   }
   async function upload(task: Task, file: File) {
     if (file.size > 10 * 1024 * 1024) {
@@ -550,6 +692,9 @@ export function TaskBoard({
             {task.detail?.trim() && (
               <p className="sti-task-description">{task.detail}</p>
             )}
+            {isOverdue(task) && (
+              <span className="sti-status overdue">Atrasada</span>
+            )}
             <div className="sti-task-context">
               {client && (
                 <p>
@@ -590,6 +735,21 @@ export function TaskBoard({
                 {task.signed ? "Conformidad firmada" : "Pendiente de firma"}
               </span>
             )}
+            {/* Point 11 (boceto 2.1): Cargada, Asignación and Terminada, "17 nov", "—" when missing. */}
+            <dl className="sti-task-dates">
+              <div>
+                <dt>Cargada</dt>
+                <dd>{shortDay(task.createdAt)}</dd>
+              </div>
+              <div className={isOverdue(task) ? "is-overdue" : ""}>
+                <dt>Asignación</dt>
+                <dd>{shortDay(task.scheduledOn)}</dd>
+              </div>
+              <div>
+                <dt>Terminada</dt>
+                <dd>{shortDay(task.finishedAt)}</dd>
+              </div>
+            </dl>
             <div className="sti-task-bottom">
               <div
                 className="sti-avatar-stack"
@@ -1000,6 +1160,9 @@ export function TaskBoard({
                     <th>Proyecto</th>
                     <th>Estado</th>
                     <th>Responsables</th>
+                    <th>Cargada</th>
+                    <th>Asignación</th>
+                    <th>Terminada</th>
                     <th>Fotos</th>
                   </tr>
                 </thead>
@@ -1041,6 +1204,14 @@ export function TaskBoard({
                         {task.assignees.map((a) => a.name).join(", ") ||
                           "Sin asignar"}
                       </td>
+                      <td>{shortDay(task.createdAt)}</td>
+                      <td className={isOverdue(task) ? "sti-overdue-text" : ""}>
+                        {shortDay(task.scheduledOn)}
+                        {isOverdue(task) && (
+                          <span className="sti-status overdue">Atrasada</span>
+                        )}
+                      </td>
+                      <td>{shortDay(task.finishedAt)}</td>
                       <td>{task.photoCount}</td>
                     </tr>
                   ))}
@@ -1161,13 +1332,82 @@ export function TaskBoard({
                 {description.length}/4000
               </span>
             </div>
-            <p className="sti-form-help">
-              {account.role === "USUARIO"
-                ? "Vas a quedar asignado automáticamente."
-                : account.role === "CLIENTE"
-                  ? "Un supervisor asignará la tarea al equipo."
-                  : "Podés asignar responsables desde el detalle después de crearla."}
-            </p>
+            {operator ? (
+              <fieldset className="sti-assign-block">
+                <legend>
+                  Asignación <small>Solo supervisor y administrador</small>
+                </legend>
+                <div className="sti-field">
+                  <label htmlFor="task-new-assignee">Responsables</label>
+                  {newAssignees.length > 0 && (
+                    <ul className="sti-chip-list">
+                      {newAssignees.map((id) => {
+                        const person = operators.find((p) => p.id === id);
+                        return (
+                          <li className="sti-person-chip" key={id}>
+                            <span className="sti-avatar small">
+                              {initials(person?.name ?? "?")}
+                            </span>
+                            {person?.name}
+                            <button
+                              type="button"
+                              className="sti-icon-button"
+                              disabled={!!busy}
+                              aria-label={`Quitar a ${person?.name ?? "esta persona"}`}
+                              onClick={() =>
+                                setNewAssignees((list) =>
+                                  list.filter((other) => other !== id),
+                                )
+                              }
+                            >
+                              <X size={14} />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  <select
+                    id="task-new-assignee"
+                    value=""
+                    disabled={!!busy}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      if (id)
+                        setNewAssignees((list) =>
+                          list.includes(id) ? list : [...list, id],
+                        );
+                    }}
+                  >
+                    <option value="">+ Agregar técnico</option>
+                    {assignable(operators)
+                      .filter((p) => !newAssignees.includes(p.id))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                  </select>
+                  <p className="sti-form-help">
+                    Uno o más. Podés dejarla sin asignar y hacerlo después.
+                  </p>
+                </div>
+                <DayField
+                  id="task-new-day"
+                  label="Fecha de asignación"
+                  help="El día para el que queda asignado el trabajo. Obligatoria si hay responsables. Es la que usan la agenda y el calendario."
+                  value={newDay}
+                  disabled={!!busy}
+                  onChange={setNewDay}
+                />
+              </fieldset>
+            ) : (
+              <p className="sti-form-help">
+                {account.role === "USUARIO"
+                  ? "Vas a quedar asignado automáticamente, para hoy."
+                  : "Un supervisor asignará la tarea al equipo."}
+              </p>
+            )}
             {panelMessage && (
               <p className="sti-inline-message" role="alert">
                 {panelMessage}
@@ -1245,6 +1485,42 @@ export function TaskBoard({
                 {selected.confirmed}/{selected.assignees.length} confirmados
               </span>
             </div>
+            {/* Point 9 (boceto 7.1): the day the work is assigned for. */}
+            <div
+              className={`sti-schedule-box${isOverdue(selected) ? " is-overdue" : ""}`}
+            >
+              <CalendarDays size={18} aria-hidden />
+              <div>
+                <span>Fecha de asignación</span>
+                <strong>
+                  {selected.scheduledOn
+                    ? longDay(selected.scheduledOn)
+                    : "Sin fecha de asignación"}
+                </strong>
+                {(rescheduledText(selected.rescheduled) ||
+                  isOverdue(selected)) && (
+                  <small>
+                    {[
+                      isOverdue(selected) ? "Atrasada" : "",
+                      rescheduledText(selected.rescheduled),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </small>
+                )}
+              </div>
+              {canSchedule(selected, account.role) && (
+                <button
+                  className="sti-button secondary small"
+                  disabled={!!busy}
+                  onClick={() =>
+                    openSchedule({ task: selected, mode: "schedule" })
+                  }
+                >
+                  {selected.scheduledOn ? "Cambiar" : "Poner fecha"}
+                </button>
+              )}
+            </div>
             <div className="sti-assignee-list">
               {selected.assignees.map((a) => (
                 <div className="sti-assignee-row" key={a.id}>
@@ -1312,16 +1588,7 @@ export function TaskBoard({
                   disabled={!!busy}
                   onChange={(e) => {
                     const userId = e.target.value;
-                    if (userId)
-                      void act(
-                        selected,
-                        () =>
-                          postWithCsrf(
-                            `/api/tasks/${selected.id}/assignments`,
-                            { userId },
-                          ),
-                        "Responsable asignado.",
-                      );
+                    if (userId) assignPerson(selected, userId);
                   }}
                 >
                   <option value="">+ Agregar responsable</option>
@@ -1486,6 +1753,38 @@ export function TaskBoard({
               ))}
             </section>
           )}
+          {opened && opened.id === selected.id && (
+            <section className="sti-detail-section">
+              <h3>
+                <CalendarDays size={17} />
+                Fechas
+              </h3>
+              <table className="sti-dates-table">
+                <tbody>
+                  {taskDates(opened).map((row) => (
+                    <tr key={row.label}>
+                      <th scope="row">{row.label}</th>
+                      <td>
+                        <strong>
+                          {row.day !== undefined
+                            ? row.day
+                              ? longDay(row.day)
+                              : "—"
+                            : row.when
+                              ? paraguayDateTime(row.when)
+                              : "—"}
+                        </strong>
+                        {row.detail && <small>{row.detail}</small>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="sti-form-help">
+                Hora de Paraguay. Cada fecha sale del historial de la tarea.
+              </p>
+            </section>
+          )}
           <section className="sti-detail-section">
             <h3>
               <Clock3 size={17} />
@@ -1519,7 +1818,7 @@ export function TaskBoard({
                       <time dateTime={event.occurredAt}>
                         {dateTime(event.occurredAt)}
                       </time>
-                      {event.locationAbsentReason && (
+                      {event.locationAbsentReason && event.kind !== "FECHA" && (
                         <small>Ubicación no disponible</small>
                       )}
                     </li>
@@ -1527,6 +1826,91 @@ export function TaskBoard({
               </ol>
             )}
           </section>
+        </Panel>
+      )}
+      {scheduleDialog && (
+        <Panel
+          title={
+            scheduleDialog.mode === "assign"
+              ? `Asignar a ${scheduleDialog.userName ?? "esta persona"}`
+              : scheduleDialog.task.scheduledOn
+                ? "Cambiar fecha de asignación"
+                : "Poner fecha de asignación"
+          }
+          eyebrow={`${scheduleDialog.task.code} · ${scheduleDialog.task.title}`}
+          onClose={() => setScheduleDialog(null)}
+          busy={!!busy}
+        >
+          {scheduleDialog.mode === "assign" ? (
+            <p className="sti-panel-intro sti-notice-amber">
+              Esta tarea todavía no tiene fecha de asignación. Elegí el día para
+              poder asignarla.
+            </p>
+          ) : (
+            scheduleDialog.task.scheduledOn && (
+              <p className="sti-panel-intro">
+                Fecha actual:{" "}
+                <strong>{longDay(scheduleDialog.task.scheduledOn)}</strong>
+              </p>
+            )
+          )}
+          <DayField
+            id="schedule-day"
+            label={
+              scheduleDialog.mode === "assign"
+                ? "Fecha de asignación"
+                : scheduleDialog.task.scheduledOn
+                  ? "Nueva fecha"
+                  : "Fecha de asignación"
+            }
+            help={
+              scheduleDialog.mode === "assign"
+                ? "El día para el que queda asignado el trabajo. Obligatoria al asignar."
+                : "Vale para todos los responsables de la tarea."
+            }
+            value={scheduleDay}
+            disabled={!!busy}
+            onChange={(day) => {
+              setScheduleDay(day);
+              setScheduleError("");
+            }}
+          />
+          {scheduleDialog.mode === "schedule" && (
+            <p className="sti-form-help">
+              El cambio queda en el historial: la fecha anterior, la nueva,
+              quién lo cambió y cuándo.
+            </p>
+          )}
+          {scheduleError && (
+            <p className="sti-inline-message" role="alert">
+              {scheduleError}
+            </p>
+          )}
+          <div className="sti-form-actions">
+            <button
+              className="sti-button secondary"
+              disabled={!!busy}
+              onClick={() => setScheduleDialog(null)}
+            >
+              Cancelar
+            </button>
+            <button
+              className="sti-button primary"
+              disabled={
+                !!busy ||
+                !scheduleDay ||
+                (scheduleDialog.mode === "schedule" &&
+                  scheduleDay === scheduleDialog.task.scheduledOn)
+              }
+              onClick={() => void saveSchedule()}
+            >
+              {busy
+                ? "Guardando…"
+                : scheduleDialog.mode === "assign"
+                  ? "Asignar"
+                  : "Guardar fecha"}
+            </button>
+          </div>
         </Panel>
       )}
       {pendingAction && (
