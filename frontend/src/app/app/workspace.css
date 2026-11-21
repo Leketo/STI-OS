@@ -2053,7 +2053,8 @@ html.dark .sti-auth {
   }
   .sti-toolbar {
     display: grid;
-    grid-template-columns: 1fr auto;
+    /* N-31: minmax(0, …) lets the view switch shrink instead of pushing "Filtros activos" out of the screen. */
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
   }
   .sti-mobile-filter-toggle {
@@ -2379,10 +2380,10 @@ html.dark .sti-auth {
 }
 .sti-reason-option {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   min-height: 44px;
-  padding: 0 14px;
+  padding: 11px 14px;
   border: 1px solid var(--sti-control-border);
   border-radius: 10px;
   cursor: pointer;
@@ -2391,7 +2392,23 @@ html.dark .sti-auth {
   border-color: var(--sti-violet);
   background: var(--sti-violet-bg);
 }
+.sti-reason-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.sti-reason-text strong {
+  font-weight: 600;
+}
+.sti-reason-text small {
+  color: var(--sti-muted);
+  font-size: var(--sti-font-xs);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
 .sti-reason-option input {
+  flex-shrink: 0;
+  margin-top: 1px;
   width: 18px;
   height: 18px;
   accent-color: var(--sti-violet);
@@ -2420,4 +2437,23 @@ html.dark .sti-logo-day {
 }
 html.dark .sti-logo-night {
   display: block !important;
+}
+
+/* N-31: at 360–400 px the view switch and "Filtros activos" share one row; tighter padding keeps both inside. */
+@media (max-width: 400px) {
+  .sti-toolbar {
+    gap: 8px;
+  }
+  .sti-view-switch {
+    min-width: 0;
+  }
+  .sti-view-switch button {
+    gap: 5px;
+    padding-inline: 9px;
+  }
+  .sti-mobile-filter-toggle {
+    gap: 5px;
+    padding-inline: 12px !important;
+    white-space: nowrap;
+  }
 }

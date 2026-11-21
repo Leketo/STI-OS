@@ -84,6 +84,7 @@ type PendingAction = {
   description: string;
   /** Not billable (R-23): the reason is chosen in the dialog, and Confirmar waits for it. */
   needsReason?: boolean;
+  confirmLabel?: string;
 };
 /** Board colour of a state; both closed states sit in "Cerradas" but not billable reads apart. */
 const toneOf = (status: string) =>
@@ -271,9 +272,10 @@ export function TaskBoard({
         task,
         to,
         needsReason: true,
-        title: "¿Cerrar como no facturable?",
-        description:
-          "La tarea se cierra sin factura y sale de la vista del técnico y del cliente. Elegí el motivo; queda en el historial.",
+        // N-49: the texts of boceto 6.2.
+        title: "¿Por qué no se factura?",
+        description: "Elegí un motivo. La tarea queda cerrada como no facturable.",
+        confirmLabel: "Confirmar: no facturable",
       });
     } else if (to === "FINALIZADO") {
       setPendingAction({
@@ -1547,7 +1549,10 @@ export function TaskBoard({
                     checked={closingReason === reason.value}
                     onChange={() => setClosingReason(reason.value)}
                   />
-                  {reason.label}
+                  <span className="sti-reason-text">
+                    <strong>{reason.label}</strong>
+                    <small>{reason.hint}</small>
+                  </span>
                 </label>
               ))}
             </fieldset>
@@ -1572,7 +1577,7 @@ export function TaskBoard({
                 setPendingAction(null);
               }}
             >
-              {busy ? "Guardando…" : "Confirmar"}
+              {busy ? "Guardando…" : (pendingAction.confirmLabel ?? "Confirmar")}
             </button>
           </div>
         </Panel>

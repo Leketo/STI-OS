@@ -77,9 +77,18 @@ export function visibleStatuses(role: Role): string[] {
 export const CLOSED_STATUSES = ["FACTURADO", "NO_FACTURABLE"] as const;
 export const isClosed = (status: string) =>
   (CLOSED_STATUSES as readonly string[]).includes(status);
+// N-49 (boceto 6.2): each reason with the explanation shown under it.
 export const CLOSING_REASONS = [
-  { value: "USO_INTERNO", label: "Uso interno" },
-  { value: "GARANTIA", label: "Garantía" },
+  {
+    value: "USO_INTERNO",
+    label: "Uso interno",
+    hint: "Trabajos propios de STI: retirar mercadería o documentos, trámites.",
+  },
+  {
+    value: "GARANTIA",
+    label: "Garantía",
+    hint: "El trabajo lo cubre la garantía: no se le cobra al cliente.",
+  },
 ] as const;
 export const reasonLabel = (reason: string | null | undefined) =>
   CLOSING_REASONS.find((r) => r.value === reason)?.label ?? null;
