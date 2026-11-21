@@ -1,9 +1,10 @@
 # STI-OS frontend
 
-El frontend tiene dos superficies independientes:
+El frontend es la aplicación autenticada:
 
-- **`/app`**: aplicación autenticada. Kanban real, tareas, asignaciones, confirmaciones, fotos, firma y administración mediante las operaciones existentes del backend.
-- **`/demo` y `/projects/...`**: demostración pública de solo lectura con datos ficticios. No es una fuente de datos para `/app`.
+- **`/app`**: Kanban real, tareas, asignaciones, confirmaciones, fotos, firma y administración mediante las operaciones existentes del backend.
+- **`/login`, `/recuperar`, `/nueva-contrasena` y `/primer-ingreso`**: ingreso y contraseñas. `/` lleva a `/login` o a `/app`.
+- El prototipo público de demostración (`/demo`, `/projects/...` y las demás direcciones de ejemplo) se quitó en el corte 3B (D-250, D-256); esas direcciones dan 404.
 
 La aplicación autenticada incluye navegación por Tareas, Clientes, Proyectos y Usuarios (ADMIN), vistas Tablero/Lista, filtros, paneles de creación y detalle, y temas Día/Noche/Sistema guardados en el navegador. El backend sigue autorizando cada operación. Las limitaciones y reglas de transición se documentan en [el rediseño](../docs/frontend-redesign.md).
 

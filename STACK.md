@@ -22,14 +22,14 @@ Este directorio se copió desde `C:\dev\STI\STI-OS` el 29/10/2026. Índice actua
 | [docs/adopcion-starter-kiranism.md](docs/adopcion-starter-kiranism.md) | Por qué se adoptó el starter de Kiranism para la demo. |
 | [backend/README.md](backend/README.md) | Backend: comandos, reglas de dominio, configuración y seguridad. |
 | [backend/api/openapi.yaml](backend/api/openapi.yaml) | Contrato de la API. |
-| [frontend/README.md](frontend/README.md) | Frontend: `/app` contra `/demo`, comprobaciones y doble de API (`ui-fixture-server.mjs`). |
+| [frontend/README.md](frontend/README.md) | Frontend: `/app`, comprobaciones y doble de API (`ui-fixture-server.mjs`). |
 
 ## Dónde está cada cosa
 
 | Ruta | Qué es |
 |---|---|
 | `backend/` | Java 21 / Spring Boot 4.1.2, JDBC, Flyway V1–V5, sesiones en PostgreSQL, correo de recuperación por SMTPS. Scripts en `backend/scripts/`: `ensayo.ps1` (entorno efímero en Docker), `start-local.ps1` y `run-local.ps1` (base de desarrollo persistente), `test-local.ps1` (suite sobre un cluster temporal), `ensayo/matriz-api.mjs` (matriz de reglas por API con datos falsos), `ensayo/recuperacion-e2e.mjs`, `ensayo/tiempos-corte2b.mjs` y `ensayo/calibracion-tope.mjs` y `consultas/` (consultas de solo lectura, como `tareas-trabadas.sql`). |
-| `frontend/` | Next.js 16 / React 19. `/app` autenticado con Kanban y `/demo` pública de solo lectura. |
+| `frontend/` | Next.js 16 / React 19. `/app` autenticado con Kanban. El prototipo `/demo` se quitó en el corte 3B. |
 | `docs/` | Documentación de producto y técnica. `docs/transcripciones/` está **fuera de Git**. |
 | `server/` | Todo lo del VPS: inventario, entrega, checklist, mensajes al agente del servidor y la auditoría del 29/10 (`auditoria-servidor-2026-10-29/`). **Fuera de Git**. |
 | `output/` | Evidencia de corridas y bases locales: `backend-local/` (base de desarrollo), `ensayo/` (última prueba de punta a punta), informes viejos. **Fuera de Git**. |
