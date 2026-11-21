@@ -112,15 +112,35 @@ const PHOTO = png(320, 240, [40, 120, 200]);
 const GPS = { latitude: -25.2637, longitude: -57.5759, accuracyM: 12 }; // Asunción
 
 // ---------- CA-74 probe: what v0.3.0 does over schema 7 ----------
-// Usage, after the 3B matrix ran on v0.3.1 and the backend was replaced by v0.3.0 over the same database:
+// Usage, with v0.3.0 running over schema 7 (Levantar -JarWeb with the v0.3.0 JAR) after the 3A matrix ran on it:
 //   node backend/scripts/ensayo/ca74-sonda.mjs <ensayo output dir>
-// Only fake data of the rehearsal. It writes ca74-sonda.md to the output dir.
-const one = (q) => sql(q).split('\n')[0] ?? '';
-const changed = one(`SELECT id FROM sti.task WHERE title = '3B sin fecha (datos falsos)'`);
-const dated = one(`SELECT id FROM sti.task WHERE title = '3B con equipo (datos falsos)'`);
-const renamed = one(`SELECT id FROM sti.client WHERE name = 'Empresa renombrada 3B'`);
+// v0.3.0 cannot write the 3B data, so the probe writes it by SQL first, as v0.3.1 does: a finished task with a day
+// set and changed (two FECHA events, ASIGNADA with its day), an open task with a day, and a renamed client and
+// project with their log. Only fake data of the rehearsal. It writes ca74-sonda.md to the output dir.
+const one = (q) => sql(q).split(String.fromCharCode(10))[0] ?? '';
+const changed = one(`SELECT id FROM sti.task WHERE status = 'FINALIZADO' ORDER BY number LIMIT 1`);
+// An open task with people, so that v0.3.0 may start it (a task without assignees is refused with 409 by rule).
+const dated = one(`SELECT t.id FROM sti.task t WHERE t.status = 'POR_HACER' AND EXISTS (SELECT 1 FROM sti.task_assignment a WHERE a.task_id = t.id) ORDER BY t.number LIMIT 1`);
+const renamed = one(`SELECT c.id FROM sti.client c WHERE EXISTS (SELECT 1 FROM sti.project p WHERE p.client_id = c.id) ORDER BY c.name LIMIT 1`);
+const renamedProject = one(`SELECT id FROM sti.project WHERE client_id = '${renamed}' ORDER BY name LIMIT 1`);
+const actor = one(`SELECT id FROM sti.app_user WHERE email = '${creds.adminEmail}'`);
+const absent = 'No aplica: cambio de fecha';
+sql(`UPDATE sti.task SET scheduled_on = DATE '2026-11-26' WHERE id = '${changed}';
+     INSERT INTO sti.task_event(id, task_id, kind, actor_id, location_absent_reason, scheduled_from, scheduled_to) VALUES
+       (gen_random_uuid(), '${changed}', 'FECHA', '${actor}', '${absent}', NULL, DATE '2026-11-24'),
+       (gen_random_uuid(), '${changed}', 'FECHA', '${actor}', '${absent}', DATE '2026-11-24', DATE '2026-11-26');
+     UPDATE sti.task_event SET scheduled_to = DATE '2026-11-24' WHERE task_id = '${changed}' AND kind = 'ASIGNADA';
+     UPDATE sti.task SET scheduled_on = DATE '2026-11-25' WHERE id = '${dated}';
+     INSERT INTO sti.catalog_name_edit(id, client_id, old_name, new_name, actor_id)
+       SELECT gen_random_uuid(), id, name, name || ' (renombrada)', '${actor}' FROM sti.client WHERE id = '${renamed}';
+     UPDATE sti.client SET name = name || ' (renombrada)' WHERE id = '${renamed}';
+     INSERT INTO sti.catalog_name_edit(id, project_id, old_name, new_name, actor_id)
+       SELECT gen_random_uuid(), id, name, name || ' (renombrado)', '${actor}' FROM sti.project WHERE id = '${renamedProject}';
+     UPDATE sti.project SET name = name || ' (renombrado)' WHERE id = '${renamedProject}';`);
+const renamedName = one(`SELECT name FROM sti.client WHERE id = '${renamed}'`);
 const admin = new Session('ADMIN');
 check('Ingreso del ADMIN en v0.3.0', 'ADMIN', 204, await admin.login(creds.adminEmail, creds.adminPassword));
+observe('Versión del backend', 'sistema', 'v0.3.0 (JAR del clon en c566b29)');
 observe('Esquema', 'sistema', sql(`SELECT max(version::int) FROM sti.flyway_schema_history WHERE success`));
 observe('Datos del 3B', 'sistema', `${sql(`SELECT count(*) FROM sti.task WHERE scheduled_on IS NOT NULL`)} con fecha, `
   + `${sql(`SELECT count(*) FROM sti.task_event WHERE kind = 'FECHA'`)} cambios, ${sql(`SELECT count(*) FROM sti.catalog_name_edit`)} nombres editados`);
@@ -135,7 +155,7 @@ const pdf = await admin.get(`/api/tasks/${changed}/constancia`);
 check('Constancia de la tarea con cambios de fecha', 'ADMIN', '200 %PDF-', `${pdf.status} ${pdf.bytes.subarray(0, 5).toString()}`);
 check('Constancia, las fechas no cambian con FECHA', 'sistema', 'Atención y Finalizada salen de ESTADO',
   sql(`SELECT count(*) FROM sti.task_event WHERE task_id = '${changed}' AND kind = 'FECHA' AND to_status IS NOT NULL`) === '0' ? 'Atención y Finalizada salen de ESTADO' : 'FECHA con to_status');
-check('Cliente renombrado en la lista', 'ADMIN', 'Empresa renombrada 3B', ((await admin.get('/api/clients')).json ?? []).find((c) => c.id === renamed)?.name);
+check('Cliente renombrado en la lista', 'ADMIN', renamedName, ((await admin.get('/api/clients')).json ?? []).find((c) => c.id === renamed)?.name);
 // What v0.3.0 writes over schema 7.
 const fresh = await admin.post('/api/tasks', { projectId: one(`SELECT id FROM sti.project ORDER BY name LIMIT 1`), title: 'CA-74 alta en v0.3.0 (datos falsos)', location: GPS });
 check('Alta en v0.3.0', 'ADMIN', 201, fresh.status);

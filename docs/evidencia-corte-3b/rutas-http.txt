@@ -1,0 +1,19 @@
+/                    307 http://127.0.0.1:3000/login
+/app                 307 http://127.0.0.1:3000/login
+/login               200 
+/recuperar           200 
+/nueva-contrasena    200 
+/primer-ingreso      307 http://127.0.0.1:3000/login
+/demo                404 
+/inbox               404 
+/views               404 
+/my-work             404 
+/projects/proj-1     404 
+/team                404 
+/roadmap             404 
+/workload            404 
+/goals               404 
+/analytics           404 
+/activity            404 
+/templates           404 
+/settings            404 
