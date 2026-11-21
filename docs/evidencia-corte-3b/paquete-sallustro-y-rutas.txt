@@ -1,0 +1,33 @@
+Sallustro en standalone: 0
+Sallustro en .next completo: 0
+_global-error
+_global-error.html
+_global-error.meta
+_global-error.rsc
+_global-error.segments
+_not-found
+_not-found.html
+_not-found.meta
+_not-found.rsc
+_not-found.segments
+app
+login
+login.html
+login.meta
+login.rsc
+login.segments
+nueva-contrasena
+nueva-contrasena.html
+nueva-contrasena.meta
+nueva-contrasena.rsc
+nueva-contrasena.segments
+page.js
+page.js.nft.json
+page_client-reference-manifest.js
+primer-ingreso
+recuperar
+recuperar.html
+recuperar.meta
+recuperar.rsc
+recuperar.segments
+fin
