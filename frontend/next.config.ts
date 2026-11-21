@@ -15,6 +15,8 @@ const nextConfig: NextConfig = {
       { source: '/api/auth/:path*', destination: `${origin.origin}/api/auth/:path*` },
       { source: '/api/accounts/:path*', destination: `${origin.origin}/api/accounts/:path*` },
       { source: '/api/accounts', destination: `${origin.origin}/api/accounts` },
+      // DEV-10 (corte 3B): renaming a client and its counts live under /api/clients/{id}.
+      { source: '/api/clients/:path*', destination: `${origin.origin}/api/clients/:path*` },
       { source: '/api/clients', destination: `${origin.origin}/api/clients` },
       { source: '/api/projects/:path*', destination: `${origin.origin}/api/projects/:path*` },
       { source: '/api/projects', destination: `${origin.origin}/api/projects` },
