@@ -1,5 +1,7 @@
 package com.stisistemas.os.task;
 
+import com.stisistemas.os.Refusal;
+
 import com.stisistemas.os.identity.Accounts;
 import java.io.IOException;
 import java.security.Principal;
@@ -37,6 +39,8 @@ public class TaskController {
     private static final int MAX_PHOTOS = 5;
     private static final ZoneId PARAGUAY = ZoneId.of("America/Asuncion");
     /** Kept in the status event of rule 2; the unassignment request carries no location. */
+    /** D-263: a change of the scheduled day asks for no location; the log records why it has none. */
+    static final String SCHEDULE_CHANGE = "No aplica: cambio de fecha";
     static final String FINISHED_BY_UNASSIGNING =
         "Finalizada al quitar a la única persona pendiente: las demás ya habían confirmado. La desasignación no registra ubicación.";
     private final JdbcTemplate jdbc;
@@ -52,8 +56,11 @@ public class TaskController {
     }
 
     record Operator(UUID id, String name, String role, boolean active) {}
-    record NewTask(UUID projectId, String title, String detail, Tasks.Location location) {}
-    record NewAssignment(UUID userId) {}
+    /** Corte 3B (R-10, R-10b): ADMIN and SUPERVISOR may assign people and the day at creation. */
+    record NewTask(UUID projectId, String title, String detail, Tasks.Location location, List<UUID> assignees,
+                   java.time.LocalDate scheduledOn) {}
+    record NewAssignment(UUID userId, java.time.LocalDate scheduledOn) {}
+    record ScheduleChange(java.time.LocalDate scheduledOn) {}
     record StatusChange(String to, Tasks.Location location, String reason) {}
     record Confirmation(Tasks.Location location) {}
     record NewSignature(String signerName, String signedOn, String image, Tasks.Location location) {}
@@ -97,6 +104,22 @@ public class TaskController {
         }
         var location = tasks.checked(input.location());
         boolean customer = account.role().equals("CLIENTE");
+        boolean operator = OPERATORS.contains(account.role());
+        boolean assigning = input.assignees() != null && !input.assignees().isEmpty();
+        // Point 3: the customer (and the technician, who is assigned by rule) never sends people or a day.
+        if (!operator && (input.assignees() != null || input.scheduledOn() != null)) {
+            throw new Refusal(HttpStatus.FORBIDDEN, "ASIGNACION_NO_PERMITIDA",
+                "Solo un supervisor o un administrador asigna responsables y fecha.");
+        }
+        if (operator && assigning && input.scheduledOn() == null) {
+            throw new Refusal(HttpStatus.BAD_REQUEST, "FECHA_OBLIGATORIA",
+                "Con responsables, la fecha de asignación es obligatoria.");
+        }
+        if (input.scheduledOn() != null) checkScheduleRange(input.scheduledOn());
+        List<UUID> people = assigning ? input.assignees().stream().distinct().toList() : List.of();
+        for (UUID person : people) {
+            if (person == null || !assignable(person)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
         Integer reachable = customer
             ? jdbc.queryForObject("SELECT count(*) FROM sti.project WHERE id = ? AND client_id = ?", Integer.class,
                 input.projectId(), account.clientId())
@@ -104,13 +127,19 @@ public class TaskController {
         if (reachable == null || reachable == 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
 
         UUID id = UUID.randomUUID();
-        jdbc.update("INSERT INTO sti.task (id, project_id, title, detail, status, created_by) VALUES (?,?,?,?,'POR_HACER',?)",
-            id, input.projectId(), title, detail, account.id());
+        // D-252: a task the technician creates is assigned to them for today, Paraguay's day.
+        java.time.LocalDate day = account.role().equals("USUARIO") ? today() : input.scheduledOn();
+        jdbc.update("INSERT INTO sti.task (id, project_id, title, detail, status, created_by, scheduled_on) "
+            + "VALUES (?,?,?,?,'POR_HACER',?,?)", id, input.projectId(), title, detail, account.id(), day);
         if (account.role().equals("USUARIO")) {
             jdbc.update("INSERT INTO sti.task_assignment (task_id, user_id) VALUES (?,?)", id, account.id());
-            tasks.event(id, "ASIGNADA", null, null, account.id(), account.id(), null);
+            tasks.event(id, "ASIGNADA", null, null, account.id(), account.id(), null, null, null, day);
         }
         tasks.event(id, "CREADA", null, "POR_HACER", account.id(), null, location);
+        for (UUID person : people) {
+            jdbc.update("INSERT INTO sti.task_assignment (task_id, user_id) VALUES (?,?)", id, person);
+            tasks.event(id, "ASIGNADA", null, null, account.id(), person, null, null, null, day);
+        }
         return tasks.require(id, account);
     }
 
@@ -123,13 +152,71 @@ public class TaskController {
         var task = tasks.require(id, account);
         if (!OPERATORS.contains(account.role())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         if (!OPEN.contains(task.status())) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        Integer assignable = jdbc.queryForObject(
-            "SELECT count(*) FROM sti.app_user WHERE id = ? AND enabled AND role <> 'CLIENTE'", Integer.class, input.userId());
-        if (assignable == null || assignable == 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        if (!assignable(input.userId())) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        // Point 5 (R-10): a task without a day gets one before anyone is assigned; one that has a day keeps it, and
+        // a different day goes through "Cambiar fecha", where the change is logged.
+        java.time.LocalDate day = task.scheduledOn();
+        if (day == null) {
+            if (input.scheduledOn() == null) {
+                throw new Refusal(HttpStatus.BAD_REQUEST, "FECHA_OBLIGATORIA",
+                    "Esta tarea todavía no tiene fecha de asignación. Elegí el día para poder asignarla.");
+            }
+            checkScheduleRange(input.scheduledOn());
+            day = input.scheduledOn();
+        } else if (input.scheduledOn() != null && !input.scheduledOn().equals(day)) {
+            throw new TaskConflict("FECHA_DISTINTA",
+                "La tarea ya tiene fecha de asignación. Para cambiarla usá \"Cambiar fecha\".");
+        }
         int added = jdbc.update("INSERT INTO sti.task_assignment (task_id, user_id) VALUES (?,?) ON CONFLICT DO NOTHING",
             id, input.userId());
-        if (added > 0) tasks.event(id, "ASIGNADA", null, null, account.id(), input.userId(), null);
+        if (added > 0) {
+            jdbc.update("UPDATE sti.task SET scheduled_on = ? WHERE id = ?", day, id);
+            tasks.event(id, "ASIGNADA", null, null, account.id(), input.userId(), null, null, null, day);
+        }
         return tasks.require(id, account);
+    }
+
+    /**
+     * Corte 3B (R-10, D-259): ADMIN and SUPERVISOR set or change the day, only while the task is open. The log keeps
+     * the previous day and the new one; no location is asked for (D-263).
+     */
+    @PostMapping("/api/tasks/{id}/schedule")
+    @Transactional
+    Tasks.Task schedule(@PathVariable UUID id, @RequestBody ScheduleChange input, Principal principal) {
+        var account = accounts.active(principal.getName());
+        tasks.lock(id);
+        var task = tasks.require(id, account);
+        if (!OPERATORS.contains(account.role())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        if (input == null || input.scheduledOn() == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        if (!OPEN.contains(task.status())) {
+            throw new TaskConflict("FECHA_NO_EDITABLE",
+                "La fecha de asignación se cambia solo en Por hacer y En proceso.");
+        }
+        checkScheduleRange(input.scheduledOn());
+        if (input.scheduledOn().equals(task.scheduledOn())) return task;
+        jdbc.update("UPDATE sti.task SET scheduled_on = ? WHERE id = ?", input.scheduledOn(), id);
+        tasks.event(id, "FECHA", null, null, account.id(), null, new Tasks.Location(null, null, null, SCHEDULE_CHANGE),
+            null, task.scheduledOn(), input.scheduledOn());
+        return tasks.require(id, account);
+    }
+
+    /** D-264: from five years back to five years ahead of today in Paraguay. */
+    private static void checkScheduleRange(java.time.LocalDate day) {
+        java.time.LocalDate today = today();
+        if (day.isBefore(today.minusYears(5)) || day.isAfter(today.plusYears(5))) {
+            throw new Refusal(HttpStatus.BAD_REQUEST, "FECHA_FUERA_DE_RANGO",
+                "La fecha de asignación tiene que estar entre 5 años atrás y 5 años adelante.");
+        }
+    }
+
+    /** D-252: "hoy" is the day in Paraguay. */
+    static java.time.LocalDate today() { return java.time.LocalDate.now(PARAGUAY); }
+
+    /** D-198: an active internal account. */
+    private boolean assignable(UUID userId) {
+        Integer found = jdbc.queryForObject(
+            "SELECT count(*) FROM sti.app_user WHERE id = ? AND enabled AND role <> 'CLIENTE'", Integer.class, userId);
+        return found != null && found > 0;
     }
 
     @DeleteMapping("/api/tasks/{id}/assignments/{userId}")
